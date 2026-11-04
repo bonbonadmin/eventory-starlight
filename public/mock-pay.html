@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mock Payment</title>
+  <link rel="icon" href="/assets/logo.png">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="lake">
+  <main class="page">
+    <div class="ornate">
+      <div class="mock-banner">Development only. This page stands in for the Xendit checkout when no Xendit key is configured.</div>
+      <h1 class="display" style="font-size:1.6rem">Mock checkout</h1>
+      <p id="info">Loading order…</p>
+      <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap">
+        <button class="btn" id="paid">Simulate paid</button>
+        <button class="btn ghost" id="expired">Simulate expired</button>
+      </div>
+      <p class="error" id="error"></p>
+    </div>
+  </main>
+  <script src="/js/common.js"></script>
+  <script>
+    const orderId = new URLSearchParams(location.search).get('order');
+    api('/api/orders/' + encodeURIComponent(orderId)).then((o) => {
+      document.getElementById('info').innerHTML =
+        `${o.votes} vote(s) for <strong>${escapeHtml(o.performanceName)}</strong>: ${formatIDR(o.amount)}`;
+    }).catch((e) => { document.getElementById('error').textContent = e.message; });
+
+    async function send(outcome) {
+      try {
+        await api('/api/mock/pay/' + encodeURIComponent(orderId), { method: 'POST', body: JSON.stringify({ outcome }) });
+        location.href = '/status?order=' + encodeURIComponent(orderId);
+      } catch (e) { document.getElementById('error').textContent = e.message; }
+    }
+    document.getElementById('paid').onclick = () => send('PAID');
+    document.getElementById('expired').onclick = () => send('EXPIRED');
+  </script>
+</body>
+</html>

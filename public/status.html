@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vote Status</title>
+  <link rel="icon" href="/assets/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="lake">
+  <div class="topbar">
+    <a href="/"><img class="mini-logo" src="/assets/logo.png" alt="Starlight home"></a>
+    <a class="back" href="/#performances">← All performances</a>
+  </div>
+
+  <main class="page">
+    <div class="ornate" id="box" aria-live="polite">
+      <div class="status-icon wait">✦</div>
+      <h1 class="display" style="font-size:1.6rem">Checking payment…</h1>
+    </div>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script>
+    sparkles(30);
+    const orderId = new URLSearchParams(location.search).get('order');
+    const box = document.getElementById('box');
+    let tries = 0;
+
+    function render(o) {
+      const what = `${o.votes.toLocaleString('id-ID')} vote${o.votes > 1 ? 's' : ''} for <strong>${escapeHtml(o.performanceName)}</strong>`;
+      if (o.status === 'PAID') {
+        box.innerHTML = `
+          <div class="status-icon ok">★</div>
+          <p class="eyebrow">Payment confirmed</p>
+          <h1 class="display" style="font-size:clamp(1.5rem,5vw,2rem)">Your star shines brighter!</h1>
+          <div class="divider">✦</div>
+          <p>${what} ${o.votes > 1 ? 'have' : 'has'} been counted.</p>
+          <p class="note">Total paid: ${formatIDR(o.amount)}<br>Order ID: ${escapeHtml(o.id)}</p>
+          <a class="btn" href="/vote?id=${encodeURIComponent(o.performanceId)}">Vote again</a>
+          <p class="hint"><a href="/#performances">Back to all performances</a></p>`;
+        return true;
+      }
+      if (o.status === 'EXPIRED') {
+        box.innerHTML = `
+          <div class="status-icon bad">✕</div>
+          <h1 class="display" style="font-size:1.6rem">Payment expired</h1>
+          <p>This payment for ${what} was not completed, so no votes were counted.</p>
+          <a class="btn" href="/vote?id=${encodeURIComponent(o.performanceId)}">Try again</a>`;
+        return true;
+      }
+      box.innerHTML = `
+        <div class="status-icon wait">✦</div>
+        <p class="eyebrow">Waiting for confirmation</p>
+        <h1 class="display" style="font-size:1.6rem">Almost there…</h1>
+        <p>We're waiting for Xendit to confirm your payment for ${what}. This page updates automatically.</p>
+        ${o.invoiceUrl ? `<p class="hint">Haven't paid yet? <a href="${escapeHtml(o.invoiceUrl)}">Open the payment page</a></p>` : ''}
+        <p class="note">Order ID: ${escapeHtml(o.id)}</p>`;
+      return false;
+    }
+
+    async function poll() {
+      if (!orderId) { location.href = '/'; return; }
+      try {
+        const o = await api('/api/orders/' + encodeURIComponent(orderId));
+        if (render(o)) return;
+      } catch (err) {
+        if (err.message === 'Order not found') {
+          box.innerHTML = '<div class="status-icon bad">✕</div><h1 class="display" style="font-size:1.6rem">Order not found</h1><p><a href="/">Back to voting</a></p>';
+          return;
+        }
+      }
+      tries++;
+      setTimeout(poll, tries < 20 ? 3000 : 10000);
+    }
+    poll();
+  </script>
+</body>
+</html>

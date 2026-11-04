@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Starlight Vote</title>
+  <meta name="description" content="Vote for your favourite Starlight 2026 performance.">
+  <link rel="icon" href="/assets/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="hero">
+    <img class="pillar left" src="/assets/pillar.png" alt="" aria-hidden="true">
+    <img class="pillar right" src="/assets/pillar.png" alt="" aria-hidden="true">
+    <div class="hero-inner">
+      <img class="logo" src="/assets/logo.png" alt="Starlight">
+      <p class="eyebrow">Starlight 2026 &middot; People's Choice</p>
+      <h1 class="display">Light Up Your Star</h1>
+      <p class="lead">Every vote is a spark. Choose the performance that moved you and help it shine the brightest.</p>
+      <a class="btn" href="#performances">Enter &amp; Vote</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="section" id="performances">
+      <p class="eyebrow">The Stage</p>
+      <h2 class="display">Performances</h2>
+      <div class="divider">✦</div>
+      <p class="sub" id="price-note">Tap a performance to cast your votes.</p>
+      <div class="grid" id="grid" aria-live="polite">
+        <p class="empty">Summoning the stars…</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>Starlight 2026 &middot; Payments secured by Xendit</footer>
+
+  <script src="/js/common.js"></script>
+  <script>
+    sparkles();
+    const grid = document.getElementById('grid');
+
+    async function load() {
+      try {
+        const [config, list] = await Promise.all([api('/api/config'), api('/api/performances')]);
+        document.getElementById('price-note').textContent =
+          `Tap a performance to cast your votes. Each vote is ${formatIDR(config.votePrice)}.`;
+
+        if (!list.length) {
+          grid.innerHTML = '<p class="empty">No performances are open for voting yet.</p>';
+          return;
+        }
+        grid.innerHTML = list.map((p, i) => `
+          <a class="card" href="/vote?id=${encodeURIComponent(p.id)}"
+             style="--hue:${hueFor(p.id)}; --i-delay:${i * 0.06}s" aria-label="Vote for ${escapeHtml(p.name)}">
+            <div class="panel">
+              ${artHtml(p)}
+              <div>
+                <div class="name">${escapeHtml(p.name)}</div>
+                ${p.subtitle ? `<div class="subtitle">${escapeHtml(p.subtitle)}</div>` : ''}
+              </div>
+              ${config.showResults ? `<div class="count"><b>${Number(p.votes).toLocaleString('id-ID')}</b>votes</div>` : ''}
+              <span class="btn small">Vote</span>
+            </div>
+            <img class="frame" src="/assets/gold-frame.png" alt="" aria-hidden="true">
+          </a>`).join('');
+      } catch (err) {
+        grid.innerHTML = `<p class="empty">Could not load performances. ${escapeHtml(err.message)}</p>`;
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

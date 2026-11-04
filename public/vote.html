@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cast Your Votes</title>
+  <link rel="icon" href="/assets/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="lake">
+  <div class="topbar">
+    <a href="/"><img class="mini-logo" src="/assets/logo.png" alt="Starlight home"></a>
+    <a class="back" href="/#performances">← All performances</a>
+  </div>
+
+  <main class="page">
+    <form class="ornate" id="form" novalidate>
+      <div id="mock" class="mock-banner" hidden>Test mode: payments are simulated, no real money is charged.</div>
+
+      <div class="chosen" id="chosen">
+        <div class="star-wrap skeleton"><div class="star"></div></div>
+        <div><p class="eyebrow">You are voting for</p><h1 class="display">…</h1></div>
+      </div>
+
+      <label class="label" for="votes">Number of votes</label>
+      <div class="stepper">
+        <button type="button" id="minus" aria-label="Fewer votes">−</button>
+        <input id="votes" name="votes" type="number" inputmode="numeric" min="1" step="1" value="1" required>
+        <button type="button" id="plus" aria-label="More votes">+</button>
+      </div>
+      <div class="chips" id="chips"></div>
+
+      <div class="total">
+        <div class="label">Total</div>
+        <div class="amount" id="amount">–</div>
+        <div class="calc" id="calc"></div>
+      </div>
+
+      <div class="fields">
+        <input name="name" id="name" type="text" maxlength="80" placeholder="Your name (optional)" autocomplete="name">
+        <input name="email" id="email" type="email" maxlength="120" placeholder="Email for receipt (optional)" autocomplete="email">
+      </div>
+
+      <button class="btn" type="submit" id="pay" style="width:100%">Continue to payment</button>
+      <p class="error" id="error" role="alert"></p>
+      <p class="hint">You'll be redirected to Xendit to pay securely. Your votes are counted as soon as payment is confirmed.</p>
+    </form>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script>
+    sparkles(30);
+    const params = new URLSearchParams(location.search);
+    const id = params.get('id');
+    const $ = (s) => document.getElementById(s);
+    const input = $('votes');
+    let price = 5000, max = 1000, performance;
+
+    function clamp(n) {
+      n = Math.floor(Number(n));
+      if (!Number.isFinite(n) || n < 1) return 1;
+      return Math.min(n, max);
+    }
+    function update() {
+      const n = clamp(input.value || 1);
+      $('amount').textContent = formatIDR(n * price);
+      $('calc').textContent = `${n.toLocaleString('id-ID')} vote${n > 1 ? 's' : ''} × ${formatIDR(price)}`;
+      document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('active', Number(c.dataset.n) === n));
+    }
+
+    $('minus').onclick = () => { input.value = clamp(Number(input.value) - 1); update(); };
+    $('plus').onclick = () => { input.value = clamp(Number(input.value) + 1); update(); };
+    input.addEventListener('input', update);
+    input.addEventListener('blur', () => { input.value = clamp(input.value); update(); });
+
+    async function init() {
+      if (!id) { location.href = '/'; return; }
+      try {
+        const [config, p] = await Promise.all([api('/api/config'), api('/api/performances/' + encodeURIComponent(id))]);
+        price = config.votePrice; max = config.maxVotes; performance = p;
+        $('mock').hidden = !config.mock;
+        input.max = max;
+        document.title = `Vote for ${p.name}`;
+        $('chosen').style.setProperty('--hue', hueFor(p.id));
+        $('chosen').innerHTML = `
+          ${artHtml(p)}
+          <div>
+            <p class="eyebrow">You are voting for</p>
+            <h1 class="display">${escapeHtml(p.name)}</h1>
+            ${p.subtitle ? `<p>${escapeHtml(p.subtitle)}</p>` : ''}
+          </div>`;
+        $('chips').innerHTML = [1, 5, 10, 25, 50, 100].filter((n) => n <= max)
+          .map((n) => `<button type="button" class="chip" data-n="${n}">${n}</button>`).join('');
+        $('chips').onclick = (e) => {
+          const n = e.target.dataset?.n;
+          if (n) { input.value = n; update(); }
+        };
+        update();
+      } catch (err) {
+        $('error').textContent = err.message === 'Performance not found'
+          ? 'This performance is not open for voting.' : err.message;
+        $('pay').disabled = true;
+      }
+    }
+
+    $('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!performance) return;
+      $('error').textContent = '';
+      input.value = clamp(input.value); update();
+      $('pay').disabled = true;
+      $('pay').textContent = 'Preparing payment…';
+      try {
+        const order = await api('/api/orders', {
+          method: 'POST',
+          body: JSON.stringify({
+            performanceId: performance.id,
+            votes: Number(input.value),
+            name: $('name').value,
+            email: $('email').value,
+          }),
+        });
+        location.href = order.invoiceUrl;
+      } catch (err) {
+        $('error').textContent = err.message;
+        $('pay').disabled = false;
+        $('pay').textContent = 'Continue to payment';
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
