@@ -1,8 +1,16 @@
 [
-  { "id": "performance-1", "name": "Performance 1", "subtitle": "Group name / genre", "image": "" },
-  { "id": "performance-2", "name": "Performance 2", "subtitle": "Group name / genre", "image": "" },
-  { "id": "performance-3", "name": "Performance 3", "subtitle": "Group name / genre", "image": "" },
-  { "id": "performance-4", "name": "Performance 4", "subtitle": "Group name / genre", "image": "" },
-  { "id": "performance-5", "name": "Performance 5", "subtitle": "Group name / genre", "image": "" },
-  { "id": "performance-6", "name": "Performance 6", "subtitle": "Group name / genre", "image": "" }
+  { "id": "aura-azkia", "name": "Aura Azkia", "image": "/assets/performers/aura-azkia.webp" },
+  { "id": "david", "name": "David", "image": "/assets/performers/david.webp" },
+  { "id": "hanny", "name": "Hanny", "image": "/assets/performers/hanny.webp" },
+  { "id": "impuls", "name": "Impuls", "image": "/assets/performers/impuls.webp" },
+  { "id": "manta-lab", "name": "Manta Lab", "image": "/assets/performers/manta-lab.webp" },
+  { "id": "nicky", "name": "Nicky", "image": "/assets/performers/nicky.webp" },
+  { "id": "stamotion", "name": "Stamotion", "image": "/assets/performers/stamotion.webp" },
+  { "id": "talenta-anggi", "name": "Talenta Anggi", "image": "/assets/performers/talenta-anggi.webp" },
+  { "id": "performance-1", "name": "Performance 1", "active": false },
+  { "id": "performance-2", "name": "Performance 2", "active": false },
+  { "id": "performance-3", "name": "Performance 3", "active": false },
+  { "id": "performance-4", "name": "Performance 4", "active": false },
+  { "id": "performance-5", "name": "Performance 5", "active": false },
+  { "id": "performance-6", "name": "Performance 6", "active": false }
 ]
