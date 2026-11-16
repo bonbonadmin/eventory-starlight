@@ -57,6 +57,7 @@
     const id = params.get('id');
     const $ = (s) => document.getElementById(s);
     const input = $('votes');
+    initPhotoViewer($('chosen'));
     let price = 5000, max = 1000, performance;
 
     function clamp(n) {

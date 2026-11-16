@@ -25,9 +25,48 @@ function hueFor(id) {
 
 // Artwork for a performance: its photo if provided, otherwise a glowing star with its initial.
 function artHtml(p) {
-  if (p.image) return `<img class="photo" src="${escapeHtml(p.image)}" alt="" loading="lazy">`;
+  if (p.image) {
+    const name = escapeHtml(p.name);
+    return `<button class="photo-thumb" type="button" aria-haspopup="dialog" aria-label="View photo of ${name}" data-performer="${name}">
+      <img class="photo" src="${escapeHtml(p.image)}" alt="" loading="lazy">
+      <span class="photo-expand" aria-hidden="true">⤢</span>
+    </button>`;
+  }
   const initial = escapeHtml((p.name || '?').trim().charAt(0).toUpperCase());
   return `<div class="star-wrap"><div class="star">${initial}</div></div>`;
+}
+
+function initPhotoViewer(container) {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'photo-viewer';
+  dialog.setAttribute('aria-labelledby', 'photo-viewer-name');
+  dialog.innerHTML = `
+    <div class="photo-viewer-bar">
+      <h2 id="photo-viewer-name"></h2>
+      <button type="button" aria-label="Close photo" autofocus>×</button>
+    </div>
+    <img alt="">`;
+  document.body.append(dialog);
+
+  const title = dialog.querySelector('h2');
+  const photo = dialog.querySelector('img');
+  const close = dialog.querySelector('button');
+
+  container.addEventListener('click', (event) => {
+    const trigger = event.target.closest('.photo-thumb');
+    if (!trigger) return;
+
+    title.textContent = trigger.dataset.performer;
+    photo.alt = trigger.dataset.performer;
+    photo.src = trigger.querySelector('img').src;
+    trigger.focus({ preventScroll: true });
+    dialog.showModal();
+  });
+
+  close.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dialog.close();
+  });
 }
 
 function sparkles(count = 40) {

@@ -138,7 +138,7 @@ main, header, footer { position: relative; z-index: 1; }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: 1fr;
   gap: 1.75rem 1.25rem;
   justify-items: center;
 }
@@ -147,12 +147,9 @@ main, header, footer { position: relative; z-index: 1; }
 .card {
   position: relative; width: 100%; max-width: 270px;
   aspect-ratio: 480 / 853;
-  text-decoration: none; color: inherit;
-  transition: transform .25s ease, filter .25s ease;
   animation: rise .6s ease both; animation-delay: var(--i-delay, 0s);
 }
 @keyframes rise { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
-.card:hover, .card:focus-visible { transform: translateY(-6px); filter: drop-shadow(0 0 24px rgba(232, 189, 120, .45)); outline: none; }
 .card .panel {
   position: absolute; inset: 14% 17%;
   background:
@@ -163,16 +160,63 @@ main, header, footer { position: relative; z-index: 1; }
   text-align: center;
 }
 .card .frame { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.card .photo { width: 100%; aspect-ratio: 3 / 2; object-fit: contain; border-radius: 6px; box-shadow: 0 0 18px hsla(var(--hue), 70%, 60%, .5); }
+.card .photo-thumb { width: 100%; }
 .card .name {
   font-family: var(--font-title); font-weight: 700; color: var(--lilac);
-  font-size: clamp(.75rem, 1.5vw, 1rem); line-height: 1.2; margin: .5rem 0 .15rem;
+  font-size: clamp(.95rem, 1.5vw, 1rem); line-height: 1.2; margin: .5rem 0 .15rem;
   text-shadow: 0 0 10px rgba(170, 140, 230, .6);
   overflow-wrap: break-word; hyphens: auto;
 }
 .card .subtitle { font-size: clamp(.8rem, 2.2vw, 1rem); color: var(--lilac-dim); line-height: 1.2; font-style: italic; }
 .card .count { font-family: var(--font-title); font-size: .75rem; letter-spacing: .1em; color: var(--gold); text-transform: uppercase; }
 .card .count b { font-size: 1.1rem; display: block; letter-spacing: 0; }
+
+.photo-thumb {
+  position: relative; display: block; flex: none; padding: 0; cursor: zoom-in;
+  overflow: hidden; border: 1px solid rgb(183 166 214 / .35); border-radius: 8px;
+  background: var(--night-2); box-shadow: 0 5px 20px rgb(18 12 36 / .6);
+}
+.photo-thumb .photo {
+  width: 100%; aspect-ratio: 3 / 2; object-fit: contain;
+  filter: brightness(.88) saturate(.72) contrast(.95);
+  transition: filter .2s ease;
+}
+.photo-thumb::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, transparent 42%, rgb(18 12 36 / .58)),
+    linear-gradient(150deg, rgb(108 79 155 / .28), transparent 54%, rgb(61 42 107 / .32));
+}
+.photo-thumb:hover .photo, .photo-thumb:focus-visible .photo { filter: brightness(.97) saturate(.83); }
+.photo-thumb:focus-visible { outline: 2px solid var(--glow); outline-offset: 3px; }
+.photo-expand {
+  position: absolute; z-index: 1; right: .3rem; bottom: .3rem;
+  display: grid; place-items: center; width: 1.4rem; height: 1.4rem;
+  border-radius: 4px; color: var(--lilac); background: rgb(18 12 36 / .8);
+  font: 1rem/1 system-ui, sans-serif;
+}
+
+.photo-viewer {
+  width: max-content; max-width: calc(100% - 2rem); padding: 0;
+  border: 1px solid var(--gold-2); border-radius: var(--radius);
+  color: var(--lilac); background: var(--night-2);
+  box-shadow: 0 16px 60px rgb(0 0 0 / .55);
+}
+.photo-viewer::backdrop { background: rgb(18 12 36 / .88); }
+html:has(.photo-viewer[open]) { overflow: hidden; }
+.photo-viewer-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .25rem .5rem .25rem .9rem; }
+.photo-viewer-bar h2 { margin: 0; font: 700 1rem/1.3 var(--font-title); }
+.photo-viewer-bar button {
+  width: 44px; height: 44px; flex: none; cursor: pointer;
+  border: 0; border-radius: 8px; color: var(--lilac); background: transparent;
+  font: 1.6rem/1 system-ui, sans-serif;
+}
+.photo-viewer-bar button:hover { background: var(--plum); }
+.photo-viewer-bar button:focus-visible { outline: 2px solid var(--glow); outline-offset: -2px; }
+.photo-viewer img {
+  max-width: 100%; max-height: calc(100dvh - 6rem); margin: 0 auto;
+  object-fit: contain;
+}
 
 /* glowing CSS star, tinted per performance via --hue */
 .star-wrap { width: 82%; aspect-ratio: 1; filter: drop-shadow(0 0 10px hsla(var(--hue), 80%, 65%, .8)) drop-shadow(0 0 22px hsla(var(--hue), 80%, 55%, .5)); }
@@ -216,7 +260,7 @@ main, header, footer { position: relative; z-index: 1; }
 
 .chosen { display: flex; align-items: center; gap: 1rem; text-align: left; margin-bottom: 1.5rem; }
 .chosen .star-wrap { width: 84px; flex: none; }
-.chosen .photo { width: 84px; aspect-ratio: 3 / 2; border-radius: 10px; object-fit: contain; flex: none; border: 1px solid var(--gold-2); }
+.chosen .photo-thumb { width: 84px; }
 .chosen h1 { font-size: clamp(1.3rem, 4.5vw, 1.8rem); line-height: 1.15; }
 .chosen p { margin: .25rem 0 0; color: var(--lilac-dim); font-style: italic; }
 
@@ -284,9 +328,9 @@ footer { text-align: center; padding: 2rem 16px 3rem; color: var(--lilac-dim); f
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
-/* On phones the whole card is the tap target; drop the inner button so content fits the frame. */
 @media (max-width: 699px) {
-  .card .btn { display: none; }
+  .card { max-width: 296px; }
+  .card .btn { min-height: 44px; }
   .card .panel { padding: 10% 5% 8%; }
   .card .star-wrap { width: 70%; }
 }

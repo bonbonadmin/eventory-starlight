@@ -29,7 +29,7 @@
       <p class="eyebrow">The Stage</p>
       <h2 class="display">Performances</h2>
       <div class="divider">✦</div>
-      <p class="sub" id="price-note">Tap a performance to cast your votes.</p>
+      <p class="sub" id="price-note">Choose a performance to cast your votes.</p>
       <div class="grid" id="grid" aria-live="polite">
         <p class="empty">Summoning the stars…</p>
       </div>
@@ -42,31 +42,31 @@
   <script>
     sparkles();
     const grid = document.getElementById('grid');
+    initPhotoViewer(grid);
 
     async function load() {
       try {
         const [config, list] = await Promise.all([api('/api/config'), api('/api/performances')]);
         document.getElementById('price-note').textContent =
-          `Tap a performance to cast your votes. Each vote is ${formatIDR(config.votePrice)}.`;
+          `Each vote is ${formatIDR(config.votePrice)}.`;
 
         if (!list.length) {
           grid.innerHTML = '<p class="empty">No performances are open for voting yet.</p>';
           return;
         }
         grid.innerHTML = list.map((p, i) => `
-          <a class="card" href="/vote?id=${encodeURIComponent(p.id)}"
-             style="--hue:${hueFor(p.id)}; --i-delay:${i * 0.06}s" aria-label="Vote for ${escapeHtml(p.name)}">
+          <article class="card" style="--hue:${hueFor(p.id)}; --i-delay:${i * 0.06}s">
             <div class="panel">
               ${artHtml(p)}
               <div>
-                <div class="name">${escapeHtml(p.name)}</div>
+                <h3 class="name">${escapeHtml(p.name)}</h3>
                 ${p.subtitle ? `<div class="subtitle">${escapeHtml(p.subtitle)}</div>` : ''}
               </div>
               ${config.showResults ? `<div class="count"><b>${Number(p.votes).toLocaleString('id-ID')}</b>votes</div>` : ''}
-              <span class="btn small">Vote</span>
+              <a class="btn small" href="/vote?id=${encodeURIComponent(p.id)}" aria-label="Vote for ${escapeHtml(p.name)}">Vote</a>
             </div>
             <img class="frame" src="/assets/gold-frame.png" alt="" aria-hidden="true">
-          </a>`).join('');
+          </article>`).join('');
       } catch (err) {
         grid.innerHTML = `<p class="empty">Could not load performances. ${escapeHtml(err.message)}</p>`;
       }
