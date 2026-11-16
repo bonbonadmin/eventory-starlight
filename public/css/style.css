@@ -297,6 +297,11 @@ html:has(.photo-viewer[open]) { overflow: hidden; }
 .total .amount { font-family: var(--font-title); font-weight: 700; font-size: clamp(1.8rem, 7vw, 2.4rem); color: var(--gold); text-shadow: 0 0 18px rgba(232, 189, 120, .45); }
 .total .calc { color: var(--lilac-dim); font-size: 1rem; }
 
+.va-details { padding: 1.25rem 0; }
+.va-copy { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .75rem; margin-bottom: 1rem; }
+.va-copy code { color: var(--lilac); font-size: clamp(1rem, 4.7vw, 1.4rem); overflow-wrap: anywhere; }
+.va-details .note { margin: .5rem 0 0; }
+
 .fields { display: grid; gap: .75rem; margin-bottom: 1.5rem; text-align: left; }
 .fields input {
   width: 100%; font: inherit; font-size: 1.05rem; color: var(--lilac);

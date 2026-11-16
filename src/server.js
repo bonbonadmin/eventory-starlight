@@ -4,27 +4,47 @@ const crypto = require('node:crypto');
 
 const envFile = path.join(__dirname, '..', '.env');
 if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+process.umask(0o077);
 
 const express = require('express');
 const { stmts, syncPerformances } = require('./db');
 const xendit = require('./xendit');
+const payments = require('./payments');
 
 const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 const VOTE_PRICE = Number(process.env.VOTE_PRICE) || 5000;
 const MAX_VOTES = Number(process.env.MAX_VOTES_PER_ORDER) || 1000;
-const INVOICE_DURATION = Number(process.env.INVOICE_DURATION) || 3600;
 const SHOW_RESULTS = (process.env.SHOW_RESULTS || 'true').toLowerCase() === 'true';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
+const mock = xendit.mode === 'mock';
+const minVotes = xendit.configured ? Math.ceil(xendit.bank.min / VOTE_PRICE) : 1;
+const maxVotes = xendit.configured ? Math.min(MAX_VOTES, Math.floor(xendit.bank.max / VOTE_PRICE)) : MAX_VOTES;
 
 syncPerformances(path.join(__dirname, '..', 'data', 'performances.json'));
 
 const app = express();
 if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY);
 app.disable('x-powered-by');
-app.use(express.json({ limit: '100kb' }));
+app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+const parseJson = express.json({ limit: '100kb' });
+
+// Authenticate before reading the payload. Test and live use separate paths and databases.
+app.post(['/api/xendit/v3', '/api/xendit/v3/test'], (req, res, next) => {
+  const expectedPath = xendit.mode === 'test' ? '/api/xendit/v3/test' : '/api/xendit/v3';
+  if (!xendit.configured || req.path !== expectedPath) return res.sendStatus(503);
+  if (!xendit.verifyCallbackToken(req.get('x-callback-token'))) return res.sendStatus(401);
+  next();
+}, parseJson, (req, res) => res.sendStatus(payments.acceptWebhook(req.body)));
+
+app.use(parseJson);
 // The mock checkout page only exists when payments are simulated.
-app.use('/mock-pay', (req, res, next) => (xendit.isMock ? next() : res.status(404).send('Not found')));
+app.get(['/mock-pay', '/mock-pay.html'], (req, res, next) => (mock ? next() : res.sendStatus(404)));
+app.get(['/status', '/status.html'], (req, res, next) => {
+  res.set('Referrer-Policy', 'no-referrer');
+  next();
+});
 app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 
 // ---------- helpers ----------
@@ -44,14 +64,17 @@ function rateLimit(max, windowMs) {
 setInterval(() => hits.clear(), 10 * 60 * 1000).unref();
 
 function requireAdmin(req, res, next) {
-  const key = req.get('x-admin-key') || '';
-  const ok = ADMIN_KEY && key.length === ADMIN_KEY.length &&
-    crypto.timingSafeEqual(Buffer.from(key), Buffer.from(ADMIN_KEY));
+  const key = Buffer.from(req.get('x-admin-key') || '');
+  const expected = Buffer.from(ADMIN_KEY);
+  const ok = expected.length > 0 && key.length === expected.length && crypto.timingSafeEqual(key, expected);
   if (!ok) return res.status(401).json({ error: 'Unauthorized' });
   next();
 }
 
-function publicOrder(o) {
+function publicOrder(o, attempt) {
+  const canPay = attempt && attempt.state === 'AWAITING_PAYMENT' &&
+    ['REQUIRES_ACTION', 'ACCEPTING_PAYMENTS', 'PENDING'].includes(attempt.provider_status) &&
+    attempt.va_number && attempt.expires_at > Date.now();
   return {
     id: o.id,
     status: o.status,
@@ -59,40 +82,25 @@ function publicOrder(o) {
     amount: o.amount,
     performanceId: o.performance_id,
     performanceName: o.performance_name,
-    invoiceUrl: o.status === 'PENDING' ? o.invoice_url : null,
+    invoiceUrl: mock && o.status === 'PENDING' && o.xendit_invoice_id?.startsWith('mock-') ? o.invoice_url : null,
+    paymentState: attempt?.state,
+    test: attempt?.environment === 'test',
+    bank: attempt ? xendit.banks[attempt.channel_code]?.name : undefined,
+    virtualAccount: canPay ? attempt.va_number : null,
+    expiresAt: attempt ? new Date(attempt.expires_at).toISOString() : null,
   };
-}
-
-// Applies a verified invoice state to an order. Only PAID/SETTLED with a matching amount confirms votes.
-function applyInvoiceState(order, invoice, rawPayload) {
-  const status = String(invoice.status || '').toUpperCase();
-  const payload = JSON.stringify(rawPayload);
-
-  if (status === 'PAID' || status === 'SETTLED') {
-    const paid = Number(invoice.paid_amount ?? invoice.amount);
-    if (paid < order.amount) {
-      console.warn(`[callback] order ${order.id}: paid ${paid} < expected ${order.amount}, not confirming`);
-      return 'AMOUNT_MISMATCH';
-    }
-    const r = stmts.markPaid.run(invoice.payment_channel || invoice.payment_method || '', payload, order.id);
-    if (r.changes) console.log(`[callback] order ${order.id}: PAID, +${order.votes} votes for ${order.performance_id}`);
-    return 'PAID';
-  }
-  if (status === 'EXPIRED') {
-    stmts.markExpired.run(payload, order.id);
-    return 'EXPIRED';
-  }
-  return status || 'IGNORED';
 }
 
 // ---------- public API ----------
 
 app.get('/api/config', (req, res) => {
-  res.json({ votePrice: VOTE_PRICE, maxVotes: MAX_VOTES, showResults: SHOW_RESULTS, mock: xendit.isMock });
+  res.json({ votePrice: VOTE_PRICE, minVotes, maxVotes, showResults: SHOW_RESULTS, mock,
+    paymentsOpen: xendit.acceptsOrders && minVotes <= maxVotes, paymentMode: xendit.configured ? xendit.mode : mock ? 'mock' : 'disabled',
+    bank: xendit.configured ? xendit.bank.name : null });
 });
 
 app.get('/api/performances', (req, res) => {
-  const list = stmts.listPerformances.all().map((p) => ({ ...p, votes: SHOW_RESULTS ? p.votes : undefined }));
+  const list = stmts.listPerformances.all(Number(mock)).map((p) => ({ ...p, votes: SHOW_RESULTS ? p.votes : undefined }));
   res.json(list);
 });
 
@@ -104,13 +112,21 @@ app.get('/api/performances/:id', (req, res) => {
 
 app.post('/api/orders', rateLimit(10, 60 * 1000), async (req, res) => {
   const { performanceId, votes, name, email } = req.body || {};
+  const count = Number(votes);
+  const hash = mock ? null : payments.checkoutHash(req.get('x-order-access'));
+  if (!mock && !hash) return res.status(400).json({ error: 'A valid checkout key is required.' });
 
+  if (hash) {
+    const existing = payments.findCheckout(hash);
+    if (existing) return sendExistingCheckout(res, existing, performanceId, count);
+  }
+  if (!xendit.acceptsOrders || minVotes > maxVotes) {
+    return res.status(503).json({ error: 'Voting checkout is currently unavailable.' });
+  }
   const performance = stmts.getPerformance.get(String(performanceId || ''));
   if (!performance) return res.status(400).json({ error: 'Please choose a valid performance.' });
-
-  const count = Number(votes);
-  if (!Number.isInteger(count) || count < 1 || count > MAX_VOTES) {
-    return res.status(400).json({ error: `Votes must be a whole number between 1 and ${MAX_VOTES}.` });
+  if (!Number.isInteger(count) || count < minVotes || count > maxVotes) {
+    return res.status(400).json({ error: `Votes must be a whole number between ${minVotes} and ${maxVotes}.` });
   }
 
   const voterName = String(name || '').trim().slice(0, 80);
@@ -118,98 +134,60 @@ app.post('/api/orders', rateLimit(10, 60 * 1000), async (req, res) => {
   if (voterEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(voterEmail)) {
     return res.status(400).json({ error: 'Please enter a valid email address, or leave it empty.' });
   }
-
   const amount = count * VOTE_PRICE;
-  const orderId = `SL-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
-  stmts.insertOrder.run(orderId, performance.id, count, amount, voterName, voterEmail);
-
-  const statusUrl = `${BASE_URL}/status?order=${encodeURIComponent(orderId)}`;
-
-  try {
-    let invoiceId, invoiceUrl;
-    if (xendit.isMock) {
-      invoiceId = `mock-${orderId}`;
-      invoiceUrl = `${BASE_URL}/mock-pay?order=${encodeURIComponent(orderId)}`;
-    } else {
-      const invoice = await xendit.createInvoice({
-        externalId: orderId,
-        amount,
-        description: `Starlight vote: ${count} vote(s) for ${performance.name}`,
-        items: [{ name: `Vote for ${performance.name}`, quantity: count, price: VOTE_PRICE }],
-        customer: voterEmail || voterName
-          ? { ...(voterName ? { given_names: voterName } : {}), ...(voterEmail ? { email: voterEmail } : {}) }
-          : null,
-        successUrl: statusUrl,
-        failureUrl: statusUrl,
-        duration: INVOICE_DURATION,
-      });
-      invoiceId = invoice.id;
-      invoiceUrl = invoice.invoice_url;
-    }
-    stmts.attachInvoice.run(invoiceId, invoiceUrl, orderId);
-    res.status(201).json({ orderId, invoiceUrl, amount, votes: count });
-  } catch (err) {
-    console.error('[orders] invoice creation failed:', err.message);
-    stmts.deleteOrder.run(orderId);
-    res.status(502).json({ error: 'Could not start payment. Please try again.' });
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Invalid payment amount.' });
   }
+  const id = `SL-${crypto.randomBytes(16).toString('hex').toUpperCase()}`;
+  if (mock) {
+    const checkoutUrl = `/mock-pay?order=${id}`;
+    stmts.insertOrder.run(id, performance.id, count, amount, voterName, voterEmail);
+    stmts.attachInvoice.run(`mock-${id}`, checkoutUrl, id);
+    return res.status(201).json({ orderId: id, checkoutUrl, amount, votes: count });
+  }
+
+  const { attempt, existing } = payments.reserveOrder({ id, hash, performanceId: performance.id,
+    votes: count, amount, voterName, voterEmail });
+  if (existing) return sendExistingCheckout(res, existing, performanceId, count);
+  await payments.create(attempt);
+  res.status(201).json(checkoutResponse(id, amount, count));
 });
+
+function checkoutResponse(id, amount, votes) {
+  return { orderId: id, checkoutUrl: `/status?order=${id}`, amount, votes };
+}
+
+function sendExistingCheckout(res, existing, performanceId, votes) {
+  if (existing.performance_id !== performanceId || existing.votes !== votes) {
+    return res.status(409).json({ error: `This checkout was opened for ${existing.votes} vote(s). Use that quantity to resume payment.` });
+  }
+  return res.json(checkoutResponse(existing.order_id, existing.amount, existing.votes));
+}
 
 app.get('/api/orders/:id', (req, res) => {
-  const order = stmts.getOrder.get(req.params.id);
+  const id = req.params.id;
+  const attempt = payments.attemptForOrder(id, req.get('x-order-access'));
+  if (attempt === null) return res.status(404).json({ error: 'Order not found' });
+  const order = stmts.getOrder.get(id);
   if (!order) return res.status(404).json({ error: 'Order not found' });
-  res.json(publicOrder(order));
+  res.json(publicOrder(order, attempt));
 });
 
-// ---------- Xendit invoice callback ----------
-// Configure in Xendit Dashboard > Settings > Webhooks > "Invoices paid": <BASE_URL>/api/xendit/callback
-
-app.post('/api/xendit/callback', async (req, res) => {
-  if (!xendit.verifyCallbackToken(req.get('x-callback-token'))) {
-    console.warn('[callback] rejected: bad x-callback-token');
-    return res.status(401).json({ error: 'Invalid callback token' });
-  }
-
-  const body = req.body || {};
-  const order = body.external_id ? stmts.getOrder.get(String(body.external_id)) : null;
-  if (!order) {
-    // Acknowledge so Xendit doesn't retry forever (e.g. Dashboard "test callback").
-    console.warn(`[callback] unknown external_id ${body.external_id}`);
-    return res.json({ ok: true, ignored: true });
-  }
-  if (order.xendit_invoice_id && body.id && order.xendit_invoice_id !== body.id) {
-    console.warn(`[callback] invoice id mismatch for ${order.id}`);
-    return res.status(400).json({ error: 'Invoice mismatch' });
-  }
-
-  try {
-    // Re-fetch the invoice from Xendit so the payload itself is never the source of truth.
-    const invoice = await xendit.getInvoice(order.xendit_invoice_id || body.id);
-    if (invoice.external_id !== order.id) return res.status(400).json({ error: 'Invoice mismatch' });
-    const result = applyInvoiceState(order, invoice, body);
-    res.json({ ok: true, result });
-  } catch (err) {
-    console.error('[callback] verification failed:', err.message);
-    res.status(500).json({ error: 'Verification failed' }); // non-2xx makes Xendit retry
-  }
-});
-
-// ---------- mock payments (only when XENDIT_SECRET_KEY is not set) ----------
-
-if (xendit.isMock) {
+if (mock) {
   app.post('/api/mock/pay/:id', (req, res) => {
     const order = stmts.getOrder.get(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    const status = req.body?.outcome === 'EXPIRED' ? 'EXPIRED' : 'PAID';
-    const fake = { id: order.xendit_invoice_id, external_id: order.id, status, paid_amount: order.amount, payment_channel: 'MOCK' };
-    res.json({ ok: true, result: applyInvoiceState(order, fake, fake) });
+    if (!order?.xendit_invoice_id?.startsWith('mock-')) return res.status(404).json({ error: 'Order not found' });
+    const result = req.body?.outcome === 'EXPIRED' ? 'EXPIRED' : 'PAID';
+    if (result === 'EXPIRED') stmts.markExpired.run(null, order.id);
+    else stmts.markPaid.run('MOCK', null, order.id);
+    res.json({ ok: true, result });
   });
 }
 
 // ---------- admin ----------
 
 app.get('/api/admin/results', requireAdmin, (req, res) => {
-  const rows = stmts.listPerformances.all();
+  const rows = stmts.listPerformances.all(Number(mock));
   res.json(rows.map((p) => ({ ...p, revenue: p.votes * VOTE_PRICE })));
 });
 
@@ -218,15 +196,17 @@ app.get('/api/admin/orders', requireAdmin, (req, res) => {
   res.json(stmts.recentOrders.all(limit));
 });
 
+app.get('/api/admin/payment-review', requireAdmin, (req, res) => res.json(payments.review()));
+
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 app.use((err, req, res, next) => {
-  console.error(err);
+  console.error(`[server] ${req.method} request failed (${err.code || err.type || err.name})`);
   res.status(err.status || 500).json({ error: err.expose ? err.message : 'Something went wrong' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   console.log(`Starlight voting running at ${BASE_URL} (port ${PORT})`);
-  if (xendit.isMock) console.log('MOCK payment mode: XENDIT_SECRET_KEY not set, payments are simulated.');
-  else if (!process.env.XENDIT_CALLBACK_TOKEN) console.warn('WARNING: XENDIT_CALLBACK_TOKEN not set, all callbacks will be rejected.');
+  console.log(`Payment mode: ${xendit.configured ? xendit.mode : mock ? 'mock' : 'disabled'}. New checkout: ${xendit.acceptsOrders ? 'open' : 'paused'}.`);
+  payments.startWorker();
 });

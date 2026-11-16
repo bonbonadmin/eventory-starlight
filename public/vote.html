@@ -41,12 +41,12 @@
 
       <div class="fields">
         <input name="name" id="name" type="text" maxlength="80" placeholder="Your name (optional)" autocomplete="name">
-        <input name="email" id="email" type="email" maxlength="120" placeholder="Email for receipt (optional)" autocomplete="email">
+        <input name="email" id="email" type="email" maxlength="120" placeholder="Email (optional)" autocomplete="email">
       </div>
 
-      <button class="btn" type="submit" id="pay" style="width:100%">Continue to payment</button>
+      <button class="btn" type="submit" id="pay" style="width:100%" disabled>Continue to payment</button>
       <p class="error" id="error" role="alert"></p>
-      <p class="hint">You'll be redirected to Xendit to pay securely. Your votes are counted as soon as payment is confirmed.</p>
+      <p class="hint" id="payment-hint">Your votes are counted when payment is confirmed.</p>
     </form>
   </main>
 
@@ -58,11 +58,11 @@
     const $ = (s) => document.getElementById(s);
     const input = $('votes');
     initPhotoViewer($('chosen'));
-    let price = 5000, max = 1000, performance;
+    let price = 5000, min = 1, max = 1000, performance, mock = false;
 
     function clamp(n) {
       n = Math.floor(Number(n));
-      if (!Number.isFinite(n) || n < 1) return 1;
+      if (!Number.isFinite(n) || n < min) return min;
       return Math.min(n, max);
     }
     function update() {
@@ -81,9 +81,16 @@
       if (!id) { location.href = '/'; return; }
       try {
         const [config, p] = await Promise.all([api('/api/config'), api('/api/performances/' + encodeURIComponent(id))]);
-        price = config.votePrice; max = config.maxVotes; performance = p;
-        $('mock').hidden = !config.mock;
+        price = config.votePrice; min = config.minVotes; max = config.maxVotes; performance = p;
+        mock = config.mock;
+        $('mock').hidden = !mock && config.paymentMode !== 'test';
+        if (!mock) $('mock').textContent = 'Xendit Test Mode. Use a simulated payment only. Test votes are kept separate.';
+        $('pay').disabled = !config.paymentsOpen;
+        $('payment-hint').textContent = !config.paymentsOpen ? 'Voting checkout is currently unavailable.' : mock
+          ? 'Continue to the simulated checkout.' : `Pay the exact amount using a ${config.bank} Virtual Account. Your votes are counted when Xendit confirms payment.`;
+        input.min = min;
         input.max = max;
+        input.value = clamp(input.value);
         document.title = `Vote for ${p.name}`;
         $('chosen').style.setProperty('--hue', hueFor(p.id));
         $('chosen').innerHTML = `
@@ -93,7 +100,7 @@
             <h1 class="display">${escapeHtml(p.name)}</h1>
             ${p.subtitle ? `<p>${escapeHtml(p.subtitle)}</p>` : ''}
           </div>`;
-        $('chips').innerHTML = [1, 5, 10, 25, 50, 100].filter((n) => n <= max)
+        $('chips').innerHTML = Array.from(new Set([min, 5, 10, 25, 50, 100])).filter((n) => n >= min && n <= max)
           .map((n) => `<button type="button" class="chip" data-n="${n}">${n}</button>`).join('');
         $('chips').onclick = (e) => {
           const n = e.target.dataset?.n;
@@ -109,14 +116,25 @@
 
     $('form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!performance) return;
+      if (!performance || $('pay').disabled) return;
       $('error').textContent = '';
       input.value = clamp(input.value); update();
       $('pay').disabled = true;
       $('pay').textContent = 'Preparing payment…';
       try {
+        const storageKey = `starlight-checkout:${performance.id}`;
+        let key;
+        if (!mock) {
+          key = sessionStorage.getItem(storageKey);
+          if (!key) {
+            const bytes = crypto.getRandomValues(new Uint8Array(32));
+            key = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+            sessionStorage.setItem(storageKey, key);
+          }
+        }
         const order = await api('/api/orders', {
           method: 'POST',
+          headers: key ? { 'x-order-access': key } : {},
           body: JSON.stringify({
             performanceId: performance.id,
             votes: Number(input.value),
@@ -124,7 +142,8 @@
             email: $('email').value,
           }),
         });
-        location.href = order.invoiceUrl;
+        if (key) sessionStorage.removeItem(storageKey);
+        location.href = order.checkoutUrl + (key ? `#key=${key}` : '');
       } catch (err) {
         $('error').textContent = err.message;
         $('pay').disabled = false;

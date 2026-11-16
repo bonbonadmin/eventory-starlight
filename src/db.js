@@ -2,13 +2,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const dbPath = path.resolve(process.env.DB_PATH || './data/starlight.db');
+const liveDbPath = path.resolve(process.env.DB_PATH || './data/starlight.db');
+const dbPath = process.env.XENDIT_MODE === 'test'
+  ? path.resolve(process.env.XENDIT_TEST_DB_PATH || `${liveDbPath}.test.db`)
+  : liveDbPath;
+if (process.env.XENDIT_MODE === 'test' && dbPath === liveDbPath) {
+  throw new Error('Xendit Test Mode requires a separate database');
+}
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new DatabaseSync(dbPath);
 db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
+  PRAGMA busy_timeout = 5000;
 
   CREATE TABLE IF NOT EXISTS performances (
     id          TEXT PRIMARY KEY,
@@ -19,8 +26,7 @@ db.exec(`
     active      INTEGER NOT NULL DEFAULT 1
   );
 
-  -- One row per checkout. Votes only count once status = 'PAID',
-  -- which is set exclusively by the verified Xendit callback.
+  -- One row per checkout. Only confirmed paid orders count toward votes.
   CREATE TABLE IF NOT EXISTS orders (
     id                 TEXT PRIMARY KEY,          -- also used as Xendit external_id
     performance_id     TEXT NOT NULL REFERENCES performances(id),
@@ -39,6 +45,52 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_orders_perf_status ON orders(performance_id, status);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_invoice ON orders(xendit_invoice_id);
+
+  CREATE TABLE IF NOT EXISTS payment_attempts (
+    order_id TEXT PRIMARY KEY REFERENCES orders(id),
+    checkout_hash TEXT NOT NULL UNIQUE,
+    reference_id TEXT NOT NULL UNIQUE,
+    payment_request_id TEXT UNIQUE,
+    business_id TEXT NOT NULL,
+    environment TEXT NOT NULL CHECK (environment IN ('test', 'live')),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    currency TEXT NOT NULL,
+    channel_code TEXT NOT NULL,
+    va_number TEXT,
+    expires_at INTEGER NOT NULL,
+    provider_status TEXT,
+    state TEXT NOT NULL,
+    issue TEXT,
+    created_at INTEGER NOT NULL,
+    next_check_at INTEGER NOT NULL,
+    check_failures INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_attempt_checks ON payment_attempts(environment, business_id, next_check_at);
+
+  CREATE TABLE IF NOT EXISTS xendit_payments (
+    payment_id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES orders(id),
+    payment_request_id TEXT NOT NULL,
+    amount REAL,
+    currency TEXT,
+    captures TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    received_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_one_credit_per_order ON xendit_payments(order_id) WHERE outcome = 'CREDITED';
+
+  CREATE TABLE IF NOT EXISTS xendit_inbox (
+    event_key TEXT PRIMARY KEY,
+    environment TEXT NOT NULL,
+    business_id TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'PENDING',
+    received_at INTEGER NOT NULL,
+    next_check_at INTEGER NOT NULL,
+    retries INTEGER NOT NULL DEFAULT 0,
+    issue TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_inbox_checks ON xendit_inbox(environment, business_id, state, next_check_at);
 `);
 
 // Sync performances from data/performances.json on startup (insert or update; never deletes,
@@ -61,9 +113,10 @@ function syncPerformances(file) {
 const stmts = {
   listPerformances: db.prepare(`
     SELECT p.id, p.name, p.subtitle, p.image,
-           COALESCE(SUM(CASE WHEN o.status = 'PAID' THEN o.votes END), 0) AS votes
+           COALESCE(SUM(o.votes), 0) AS votes
     FROM performances p
-    LEFT JOIN orders o ON o.performance_id = p.id
+    LEFT JOIN orders o ON o.performance_id = p.id AND o.status = 'PAID'
+      AND (? = 1 OR COALESCE(o.payment_method, '') <> 'MOCK')
     WHERE p.active = 1
     GROUP BY p.id
     ORDER BY p.sort_order
@@ -74,13 +127,12 @@ const stmts = {
     VALUES (?, ?, ?, ?, ?, ?)
   `),
   attachInvoice: db.prepare(`UPDATE orders SET xendit_invoice_id = ?, invoice_url = ? WHERE id = ?`),
-  deleteOrder: db.prepare(`DELETE FROM orders WHERE id = ? AND status = 'PENDING'`),
   getOrder: db.prepare(`
     SELECT o.*, p.name AS performance_name
     FROM orders o JOIN performances p ON p.id = o.performance_id
     WHERE o.id = ?
   `),
-  // Status guard makes these idempotent: Xendit may deliver the same callback more than once.
+  // These updates are used only by the local mock checkout.
   markPaid: db.prepare(`
     UPDATE orders SET status = 'PAID', paid_at = datetime('now'), payment_method = ?, callback_payload = ?
     WHERE id = ? AND status = 'PENDING'
