@@ -1,77 +1,159 @@
 <!doctype html>
-<html lang="en">
+<html lang="id">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Starlight Vote</title>
-  <meta name="description" content="Vote for your favourite Starlight 2026 performance.">
-  <link rel="icon" href="/assets/logo.png">
+  <meta name="theme-color" content="#0a1430">
+  <title>People's Choice · Starlight UMN 2026</title>
+  <meta name="description" content="Dukung penampil favorit Anda di Starlight UMN 2026.">
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/assets/starlight/icon.png" type="image/png" sizes="512x512">
+  <link rel="apple-touch-icon" href="/assets/starlight/apple-icon.png">
+  <link rel="preload" href="/fonts/efco-brookshire.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Alice&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/common.js"></script>
+  <!-- Tahan render pertama sampai daftar penampil selesai digambar (lihat skrip di bawah). -->
+  <link rel="expect" href="#site-footer" blocking="render">
 </head>
 <body>
-  <header class="hero">
-    <img class="pillar left" src="/assets/pillar.png" alt="" aria-hidden="true">
-    <img class="pillar right" src="/assets/pillar.png" alt="" aria-hidden="true">
-    <div class="hero-inner">
-      <img class="logo" src="/assets/logo.png" alt="Starlight">
-      <p class="eyebrow">Starlight 2026 &middot; People's Choice</p>
-      <h1 class="display">Light Up Your Star</h1>
-      <p class="lead">Every vote is a spark. Choose the performance that moved you and help it shine the brightest.</p>
-      <a class="btn" href="#performances">Enter &amp; Vote</a>
+  <!-- Logo besar di bawah udah mewakili brand, jadi bilah atas cuma tombol
+       balik, bentuknya samain sama tombol balik di halaman lain. -->
+  <nav class="topbar">
+    <a class="back" href="https://www.starlightumn2026.com"><span aria-hidden="true">←</span> Situs Starlight</a>
+  </nav>
+
+  <header class="intro">
+    <span class="cloud left" aria-hidden="true"><img src="/assets/starlight/awan-1.webp" alt="" width="556" height="149"></span>
+    <span class="cloud right" aria-hidden="true"><img src="/assets/starlight/awan-3.webp" alt="" width="556" height="149" style="scale: -1 1"></span>
+    <!-- Hero situs utama: logo dengan halo ungu-emas, melayang, kerlip gantian
+         di lima ujung bintangnya. -->
+    <div class="hero-logo">
+      <span class="halo" aria-hidden="true"></span>
+      <span class="float">
+        <img src="/assets/starlight/starlight-hero.webp" alt="Starlight UMN 2026" width="480" height="480" fetchpriority="high">
+        <span class="tip" style="--x:50.6%; --y:15%; --c:#fff3d6; --s:7.3%; --d:3.4s; --o:0s" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M6 0Q6.9 5.1 12 6Q6.9 6.9 6 12Q5.1 6.9 0 6Q5.1 5.1 6 0Z"/></svg></span>
+        <span class="tip" style="--x:14%; --y:41%; --c:#d8c2ff; --s:5.3%; --d:4.2s; --o:1.3s" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M6 0Q6.9 5.1 12 6Q6.9 6.9 6 12Q5.1 6.9 0 6Q5.1 5.1 6 0Z"/></svg></span>
+        <span class="tip" style="--x:86%; --y:42%; --c:#ffe2a0; --s:6%; --d:3.8s; --o:2.4s" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M6 0Q6.9 5.1 12 6Q6.9 6.9 6 12Q5.1 6.9 0 6Q5.1 5.1 6 0Z"/></svg></span>
+        <span class="tip" style="--x:26%; --y:85%; --c:#d8c2ff; --s:4.7%; --d:4.6s; --o:3.1s" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M6 0Q6.9 5.1 12 6Q6.9 6.9 6 12Q5.1 6.9 0 6Q5.1 5.1 6 0Z"/></svg></span>
+        <span class="tip" style="--x:72.5%; --y:85%; --c:#ffe2a0; --s:5%; --d:4s; --o:.7s" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M6 0Q6.9 5.1 12 6Q6.9 6.9 6 12Q5.1 6.9 0 6Q5.1 5.1 6 0Z"/></svg></span>
+      </span>
     </div>
+    <p class="eyebrow">People's Choice</p>
+    <h1 class="display ignite">Dukung Penampil Favorit Anda</h1>
   </header>
 
-  <main>
-    <section class="section" id="performances">
-      <p class="eyebrow">The Stage</p>
-      <h2 class="display">Performances</h2>
-      <div class="divider">✦</div>
-      <p class="sub" id="price-note">Choose a performance to cast your votes.</p>
-      <div class="grid" id="grid" aria-live="polite">
-        <p class="empty">Summoning the stars…</p>
+  <main class="section">
+    <span class="cloud right" aria-hidden="true"><img src="/assets/starlight/awan-5.webp" alt=""></span>
+    <span class="cloud left" aria-hidden="true"><img src="/assets/starlight/awan-6.webp" alt="" style="scale: -1 1"></span>
+    <div class="section-inner">
+      <h2 class="sr-only">Daftar penampil</h2>
+      <div class="grid" id="grid" aria-busy="true">
+        <p class="empty">Memuat daftar penampil…</p>
       </div>
-    </section>
+    </div>
   </main>
 
-  <footer>Starlight 2026 &middot; Payments secured by Xendit</footer>
-
-  <script src="/js/common.js"></script>
   <script>
-    sparkles();
     const grid = document.getElementById('grid');
-    initPhotoViewer(grid);
+    let shownIds = '', refresher;
+
+    function render(config, list) {
+      shownIds = list.map((p) => p.id).join();
+      // Jumlah suara ikut berubah tanpa muat ulang, kayak di situs utama.
+      if (config.showResults && !refresher) {
+        refresher = setInterval(refreshCounts, 30000);
+        document.addEventListener('visibilitychange', refreshCounts);
+      }
+      if (!list.length) {
+        grid.innerHTML = '<p class="empty">Belum ada penampil yang dapat dipilih.</p>';
+        return;
+      }
+      // Jedanya pendek biar semua kartu udah di tempat dalam satu detik.
+      grid.innerHTML = list.map((p, i) => `
+        <a class="card" data-id="${escapeHtml(p.id)}" href="/vote?id=${encodeURIComponent(p.id)}" style="--delay:${Math.min(i * 0.04, 0.4)}s">
+          <div class="plate">${plateHtml(p)}</div>
+          <div class="plaque">
+            <div class="nm"><p class="name">${escapeHtml(p.name)}</p></div>
+            <span class="go">Beli Suara <svg viewBox="0 0 8 10" aria-hidden="true"><path d="M1.6 1.2 6 5 1.6 8.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          ${p.subtitle || config.showResults ? `<p class="meta">${p.subtitle ? `<span>${escapeHtml(p.subtitle)}</span>` : ''}${config.showResults ? `<span class="votes">${formatVotes(p.votes)}</span>` : ''}</p>` : ''}
+        </a>`).join('');
+      grid.setAttribute('aria-busy', 'false');
+    }
 
     async function load() {
+      grid.setAttribute('aria-busy', 'true');
       try {
         const [config, list] = await Promise.all([api('/api/config'), api('/api/performances')]);
-        document.getElementById('price-note').textContent =
-          `Each vote is ${formatIDR(config.votePrice)}.`;
-
-        if (!list.length) {
-          grid.innerHTML = '<p class="empty">No performances are open for voting yet.</p>';
-          return;
-        }
-        grid.innerHTML = list.map((p, i) => `
-          <article class="card" style="--hue:${hueFor(p.id)}; --i-delay:${i * 0.06}s">
-            <div class="panel">
-              ${artHtml(p)}
-              <div>
-                <h3 class="name">${escapeHtml(p.name)}</h3>
-                ${p.subtitle ? `<div class="subtitle">${escapeHtml(p.subtitle)}</div>` : ''}
-              </div>
-              ${config.showResults ? `<div class="count"><b>${Number(p.votes).toLocaleString('id-ID')}</b>votes</div>` : ''}
-              <a class="btn small" href="/vote?id=${encodeURIComponent(p.id)}" aria-label="Vote for ${escapeHtml(p.name)}">Vote</a>
-            </div>
-            <img class="frame" src="/assets/gold-frame.png" alt="" aria-hidden="true">
-          </article>`).join('');
+        render(config, list);
       } catch (err) {
-        grid.innerHTML = `<p class="empty">Could not load performances. ${escapeHtml(err.message)}</p>`;
+        grid.innerHTML = `
+          <div class="empty">
+            <p>Daftar penampil gagal dimuat. ${escapeHtml(err.message)}</p>
+            <button class="btn ghost" type="button" onclick="load()">Coba Lagi</button>
+          </div>`;
+        grid.setAttribute('aria-busy', 'false');
       }
     }
-    load();
+
+    // Cuma angkanya yang diganti di tempat: nggak render ulang, jadi poster
+    // nggak dimuat lagi dan kartu nggak ngulang animasi masuk. Kalau daftarnya
+    // berubah, baru muat semua.
+    async function refreshCounts() {
+      if (document.hidden) return;
+      try {
+        const list = await api('/api/performances');
+        if (list.map((p) => p.id).join() !== shownIds) return load();
+        for (const p of list) {
+          const el = grid.querySelector(`[data-id="${CSS.escape(p.id)}"] .votes`);
+          const text = formatVotes(p.votes);
+          if (el && el.textContent !== text) el.textContent = text;
+        }
+      } catch { /* biarin yang tampil; dicoba lagi di putaran berikutnya */ }
+    }
+
+    // Server udah nitip datanya di #boot, jadi daftarnya digambar sebelum render
+    // pertama; fetch cuma cadangan (mis. file-nya dibuka tanpa server).
+    const boot = JSON.parse(document.getElementById('boot')?.textContent || 'null');
+    if (boot) render(boot.config, boot.list); else load();
+
+    // Transisi ke/dari halaman beli: lukisan kartu yang dipencet jadi lukisan
+    // besar di sana. Namanya dipasang pas keluar dan pas masuk, jadi cuma satu
+    // poster itu yang bergerak; sisanya cross-fade.
+    const posterOf = (url) => {
+      const id = new URL(url, location.href).searchParams.get('id');
+      return id && grid.querySelector(`[data-id="${CSS.escape(id)}"] .plate`);
+    };
+    addEventListener('pageswap', (e) => {
+      const img = e.viewTransition && posterOf(e.activation.entry.url);
+      if (img) img.style.viewTransitionName = 'poster';
+    });
+    addEventListener('pagereveal', (e) => {
+      // pagereveal nggak punya .activation; dari mana datangnya ditanya ke Navigation API.
+      const from = globalThis.navigation?.activation?.from;
+      const img = e.viewTransition && from && posterOf(from.url);
+      if (img) { img.style.viewTransitionName = 'poster'; e.viewTransition.finished.then(() => { img.style.viewTransitionName = ''; }); }
+    });
   </script>
+
+  <footer class="site-footer" id="site-footer">
+    <img class="vine" src="/assets/starlight/separator-footer.webp" alt="" aria-hidden="true" width="1920" height="236" loading="lazy">
+    <div class="inner">
+      <img class="logo" src="/assets/starlight/starlight-nav.webp" alt="Starlight UMN 2026" width="320" height="320" loading="lazy">
+      <p class="tagline">&ldquo;Spark the Magic, Brave to Rise&rdquo;</p>
+      <span class="divider" aria-hidden="true"></span>
+      <p class="part-of">Part of</p>
+      <div class="orgs">
+        <img src="/assets/starlight/umn.webp" alt="Universitas Multimedia Nusantara" width="160" height="309" loading="lazy">
+        <img src="/assets/starlight/bem.webp" alt="BEM UMN" width="160" height="244" loading="lazy">
+      </div>
+      <span class="divider" aria-hidden="true"></span>
+      <small>&copy; Starlight UMN 2026</small>
+    </div>
+  </footer>
+
 </body>
 </html>
