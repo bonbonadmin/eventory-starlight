@@ -1,42 +1,53 @@
 <!doctype html>
-<html lang="en">
+<html lang="id">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mock Payment</title>
-  <link rel="icon" href="/assets/logo.png">
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#0a1430">
+  <meta name="robots" content="noindex">
+  <title>Simulasi Pembayaran · Starlight UMN 2026</title>
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/assets/starlight/icon.png" type="image/png" sizes="512x512">
+  <link rel="apple-touch-icon" href="/assets/starlight/apple-icon.png">
+  <link rel="preload" href="/fonts/efco-brookshire.ttf" as="font" type="font/ttf" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Alice&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
 </head>
-<body class="lake">
-  <main class="page">
-    <div class="ornate">
-      <div class="mock-banner">Development only. This page stands in for the Xendit checkout when no Xendit key is configured.</div>
-      <h1 class="display" style="font-size:1.6rem">Mock checkout</h1>
-      <p id="info">Loading order…</p>
-      <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap">
-        <button class="btn" id="paid">Simulate paid</button>
-        <button class="btn ghost" id="expired">Simulate expired</button>
+<body>
+  <!-- Hutan willow dari footer situs utama, naik dari bawah layar. -->
+  <div class="scene" aria-hidden="true"></div>
+  <main class="page" style="padding-top:2rem">
+    <div class="panel status">
+      <h1 class="display">Simulasi Pembayaran</h1>
+      <p id="info">Memuat pesanan…</p>
+      <div class="actions">
+        <button class="btn" id="paid" type="button">Pembayaran Berhasil</button>
+        <button class="btn ghost" id="expired" type="button">Pembayaran Kedaluwarsa</button>
       </div>
-      <p class="error" id="error"></p>
+      <p class="error" id="error" role="alert"></p>
     </div>
   </main>
   <script src="/js/common.js"></script>
   <script>
     const orderId = new URLSearchParams(location.search).get('order');
+    const buttons = [document.getElementById('paid'), document.getElementById('expired')];
     api('/api/orders/' + encodeURIComponent(orderId)).then((o) => {
       document.getElementById('info').innerHTML =
-        `${o.votes} vote(s) for <strong>${escapeHtml(o.performanceName)}</strong>: ${formatIDR(o.amount)}`;
+        `${formatVotes(o.votes)} untuk <strong>${escapeHtml(o.performanceName)}</strong>: ${formatIDR(o.amount)}`;
     }).catch((e) => { document.getElementById('error').textContent = e.message; });
 
     async function send(outcome) {
+      buttons.forEach((b) => { b.disabled = true; });
       try {
         await api('/api/mock/pay/' + encodeURIComponent(orderId), { method: 'POST', body: JSON.stringify({ outcome }) });
         location.href = '/status?order=' + encodeURIComponent(orderId);
-      } catch (e) { document.getElementById('error').textContent = e.message; }
+      } catch (e) {
+        document.getElementById('error').textContent = e.message;
+        buttons.forEach((b) => { b.disabled = false; });
+      }
     }
-    document.getElementById('paid').onclick = () => send('PAID');
-    document.getElementById('expired').onclick = () => send('EXPIRED');
+    buttons[0].onclick = () => send('PAID');
+    buttons[1].onclick = () => send('EXPIRED');
   </script>
 </body>
 </html>

@@ -1,134 +1,246 @@
 <!doctype html>
-<html lang="en">
+<html lang="id">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cast Your Votes</title>
-  <link rel="icon" href="/assets/logo.png">
+  <meta name="theme-color" content="#0a1430">
+  <title>Beli Suara · Starlight UMN 2026</title>
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/assets/starlight/icon.png" type="image/png" sizes="512x512">
+  <link rel="apple-touch-icon" href="/assets/starlight/apple-icon.png">
+  <link rel="preload" href="/fonts/efco-brookshire.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Alice&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/common.js"></script>
+  <!-- Tahan render pertama sampai penampilnya selesai digambar (lihat skrip di bawah). -->
+  <link rel="expect" href="#siap" blocking="render">
 </head>
-<body class="lake">
-  <div class="topbar">
-    <a href="/"><img class="mini-logo" src="/assets/logo.png" alt="Starlight home"></a>
-    <a class="back" href="/#performances">← All performances</a>
-  </div>
+<body>
+  <!-- Hutan willow dari footer situs utama, naik dari bawah layar. -->
+  <div class="scene" aria-hidden="true"></div>
+  <nav class="topbar">
+    <a class="back" href="/"><span aria-hidden="true">←</span> Semua penampil</a>
+    <!-- Pendukung nyebarin link penampilnya; halaman ini link-nya. -->
+    <button class="back share" type="button" id="share" hidden>
+      <!-- Panah lengkung kayak ikon share TikTok; jadi centang setelah disalin. -->
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path class="share-arrow" d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+        <path class="share-tick" d="M5 12.5 L10 17 L19 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"/>
+      </svg>
+      <span class="share-label" aria-live="polite">Bagikan</span>
+    </button>
+  </nav>
 
-  <main class="page">
-    <form class="ornate" id="form" novalidate>
-      <div id="mock" class="mock-banner" hidden>Test mode: payments are simulated, no real money is charged.</div>
+  <main class="page" id="page">
+    <!-- Laptop: poster penampil yang didukung, di samping panel. -->
+    <figure class="poster-side" id="poster-side" aria-hidden="true"></figure>
+    <form class="panel" id="form" novalidate>
+      <div id="mock" class="mock-banner" role="status" hidden>Mode uji: pembayaran hanya simulasi, tidak ada uang sungguhan yang dipotong.</div>
 
-      <div class="chosen" id="chosen">
-        <div class="star-wrap skeleton"><div class="star"></div></div>
-        <div><p class="eyebrow">You are voting for</p><h1 class="display">…</h1></div>
+      <div class="chosen" id="chosen" aria-live="polite">
+        <div class="thumb plate"></div>
+        <div>
+          <p class="eyebrow">Anda mendukung</p>
+          <h1>Memuat…</h1>
+        </div>
       </div>
 
-      <label class="label" for="votes">Number of votes</label>
-      <div class="stepper">
-        <button type="button" id="minus" aria-label="Fewer votes">−</button>
-        <input id="votes" name="votes" type="number" inputmode="numeric" min="1" step="1" value="1" required>
-        <button type="button" id="plus" aria-label="More votes">+</button>
-      </div>
-      <div class="chips" id="chips"></div>
+      <!-- Disembunyiin sampai penampil dan harganya kemuat; dikunci selama pembayaran disiapkan. -->
+      <fieldset class="plain" id="checkout" hidden>
+        <hr class="rule">
 
-      <div class="total">
-        <div class="label">Total</div>
-        <div class="amount" id="amount">–</div>
-        <div class="calc" id="calc"></div>
-      </div>
+        <label class="field-label" for="votes">Jumlah suara</label>
+        <div class="stepper">
+          <button type="button" id="minus" aria-label="Kurangi satu suara">−</button>
+          <input id="votes" name="votes" type="number" inputmode="numeric" min="1" step="1" value="1" required aria-describedby="votes-error">
+          <button type="button" id="plus" aria-label="Tambah satu suara">+</button>
+        </div>
+        <p class="field-error" id="votes-error" hidden></p>
+        <div class="chips" id="chips" role="group" aria-label="Pilihan cepat jumlah suara"></div>
 
-      <div class="fields">
-        <input name="name" id="name" type="text" maxlength="80" placeholder="Your name (optional)" autocomplete="name">
-        <input name="email" id="email" type="email" maxlength="120" placeholder="Email (optional)" autocomplete="email">
-      </div>
+        <hr class="rule">
 
-      <button class="btn" type="submit" id="pay" style="width:100%" disabled>Continue to payment</button>
-      <p class="error" id="error" role="alert"></p>
-      <p class="hint" id="payment-hint">Your votes are counted when payment is confirmed.</p>
+        <div class="total">
+          <div>
+            <span class="field-label">Total pembayaran</span>
+            <span class="calc" id="calc"></span>
+          </div>
+          <output class="amount" id="amount" for="votes" aria-live="polite">–</output>
+        </div>
+
+        <details class="extra" id="extra">
+          <summary><span>Tambahkan nama &amp; email <small>(opsional)</small></span></summary>
+          <div class="fields">
+            <div>
+              <label class="field-label" for="name">Nama</label>
+              <input name="name" id="name" type="text" maxlength="80" autocomplete="name">
+            </div>
+            <div>
+              <label class="field-label" for="email">Email untuk bukti pembayaran</label>
+              <input name="email" id="email" type="email" maxlength="120" autocomplete="email" inputmode="email" aria-describedby="email-error">
+              <p class="field-error" id="email-error" hidden></p>
+            </div>
+          </div>
+        </details>
+
+        <button class="btn block" type="submit" id="pay" disabled>Bayar Sekarang</button>
+        <p class="error" id="error" role="alert"></p>
+        <p class="hint" id="payment-hint"></p>
+      </fieldset>
     </form>
   </main>
 
-  <script src="/js/common.js"></script>
-  <script>
-    sparkles(30);
+  <script id="app">
     const params = new URLSearchParams(location.search);
     const id = params.get('id');
     const $ = (s) => document.getElementById(s);
     const input = $('votes');
-    initPhotoViewer($('chosen'));
-    let price = 5000, min = 1, max = 1000, performance, mock = false;
+    let price = 5000, min = 1, max = 1000, performance, sending = false, mock = false, paymentsOpen = false;
 
-    function clamp(n) {
-      n = Math.floor(Number(n));
-      if (!Number.isFinite(n) || n < min) return min;
-      return Math.min(n, max);
+    // Setelan dari backend: harga, batas suara, mode pembayaran, dan apakah checkout dibuka.
+    function applyConfig(config) {
+      price = config.votePrice; min = config.minVotes ?? 1; max = config.maxVotes;
+      mock = !!config.mock; paymentsOpen = !!config.paymentsOpen;
+      input.min = min; input.max = max;
+      // Isian bawaan (1) nggak boleh di bawah batas minimum bayar lewat bank.
+      if (/^\d+$/.test(input.value) && Number(input.value) < min) input.value = min;
+      $('mock').hidden = !mock && config.paymentMode !== 'test';
+      if (!mock) $('mock').textContent = 'Mode uji Xendit: gunakan pembayaran simulasi saja. Suara uji dipisahkan dari suara asli.';
+      $('payment-hint').textContent = !paymentsOpen
+        ? 'Pembayaran suara sedang tidak tersedia.'
+        : mock
+          ? 'Lanjut ke checkout simulasi.'
+          : `Bayar sesuai nominal lewat Virtual Account ${config.bank}. Suara dihitung setelah Xendit mengonfirmasi pembayaran.`;
+    }
+
+    // Angka yang tampil = angka yang dibayar: isian salah dikasih tahu, bukan
+    // diam-diam diubah — tombol +/− juga nggak.
+    function readVotes() {
+      const raw = String(input.value).trim();
+      if (!/^\d+$/.test(raw)) return null;
+      const n = Number(raw);
+      return n >= min && n <= max ? n : null;
     }
     function update() {
-      const n = clamp(input.value || 1);
-      $('amount').textContent = formatIDR(n * price);
-      $('calc').textContent = `${n.toLocaleString('id-ID')} vote${n > 1 ? 's' : ''} × ${formatIDR(price)}`;
-      document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('active', Number(c.dataset.n) === n));
+      const n = readVotes();
+      const ok = n !== null;
+      input.setAttribute('aria-invalid', String(!ok));
+      $('votes-error').hidden = ok;
+      $('votes-error').textContent = ok ? '' : `Masukkan angka bulat dari ${min.toLocaleString('id-ID')} sampai ${max.toLocaleString('id-ID')}.`;
+      $('amount').textContent = ok ? formatIDR(n * price) : '–';
+      $('calc').textContent = ok ? `${formatVotes(n)} × ${formatIDR(price)}` : '';
+      document.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(Number(c.dataset.n) === n)));
+      $('minus').disabled = !ok || n <= min;
+      $('plus').disabled = !ok || n >= max;
+      $('pay').disabled = !ok || !performance || sending || !paymentsOpen;
     }
 
-    $('minus').onclick = () => { input.value = clamp(Number(input.value) - 1); update(); };
-    $('plus').onclick = () => { input.value = clamp(Number(input.value) + 1); update(); };
+    $('minus').onclick = () => { const n = readVotes(); if (n !== null) { input.value = n - 1; update(); } };
+    $('plus').onclick = () => { const n = readVotes(); if (n !== null) { input.value = n + 1; update(); } };
     input.addEventListener('input', update);
-    input.addEventListener('blur', () => { input.value = clamp(input.value); update(); });
 
+    function checkEmail() {
+      const email = $('email').value.trim();
+      const ok = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      $('email').setAttribute('aria-invalid', String(!ok));
+      $('email-error').hidden = ok;
+      $('email-error').textContent = ok ? '' : 'Format email tidak valid. Contoh: nama@email.com, atau kosongkan.';
+      return ok;
+    }
+    $('email').addEventListener('input', () => { if ($('email').getAttribute('aria-invalid') === 'true') checkEmail(); });
+
+    setupShare($('share'), () => performance);
+
+    // Kalau gagal dimuat, bilang di tempat penampilnya dan kasih jalan keluar —
+    // jangan sampai ada form yang kelihatan bisa diisi tapi nggak bisa dibayar.
+    function showLoadError(err) {
+      $('checkout').hidden = true;
+      $('share').hidden = true;
+      $('page').classList.remove('with-poster');
+      $('chosen').innerHTML = err.status === 404
+        ? `<div>
+             <p class="load-error">Penampil ini tidak dapat dipilih.</p>
+             <a class="btn ghost" href="/">Lihat Semua Penampil</a>
+           </div>`
+        : `<div>
+             <p class="load-error">Data penampil gagal dimuat. ${escapeHtml(err.message)}</p>
+             <button class="btn ghost" type="button" id="retry">Coba Muat Lagi</button>
+           </div>`;
+      $('retry')?.addEventListener('click', init);
+    }
+
+    // Gambar penampilnya: thumbnail + nama di panel, lukisan besar berbingkai
+    // dengan papan namanya di samping (laptop), dan kontrol yang tergantung harga.
+    function renderPerformer(p, config) {
+      applyConfig(config); performance = p;
+      document.title = `Dukung ${p.name} · Starlight UMN 2026`;
+      $('chosen').innerHTML = `
+        <div class="thumb plate">${plateHtml(p)}</div>
+        <div>
+          <p class="eyebrow">Anda mendukung</p>
+          <h1>${escapeHtml(p.name)}</h1>
+          ${p.subtitle ? `<p class="calc" style="margin:.25rem 0 0">${escapeHtml(p.subtitle)}</p>` : ''}
+          ${typeof p.votes === 'number' ? `<p class="votes-now">${formatVotes(p.votes)}</p>` : ''}
+        </div>`;
+      // Fotonya sama dengan thumbnail, jadi nggak unduh dua kali; kolomnya dilepas kalau gagal.
+      $('page').classList.toggle('with-poster', !!p.image);
+      $('poster-side').innerHTML = p.image
+        ? `<div class="plate">${plateHtml(p, true)}</div><div class="plaque"><p class="name">${escapeHtml(p.name)}</p></div>`
+        : '';
+      $('poster-side').querySelector('.photo img')?.addEventListener('error', () => $('page').classList.remove('with-poster'));
+      $('chips').innerHTML = Array.from(new Set([...(min > 1 ? [min] : []), 5, 10, 25, 50])).filter((n) => n >= min && n <= max)
+        .map((n) => `<button type="button" class="chip" data-n="${n}" aria-pressed="false">${n}</button>`).join('');
+      $('chips').onclick = (e) => {
+        const n = e.target.closest('.chip')?.dataset.n;
+        if (n) { input.value = n; update(); }
+      };
+      $('checkout').hidden = false;
+      $('share').hidden = false;
+      update();
+    }
+
+    // Data segar dari API: jumlah suaranya bisa udah berubah sejak halaman
+    // dikirim. Kalau penampilnya sama, cuma angkanya yang disentuh, biar
+    // posternya nggak digambar ulang di depan orang.
     async function init() {
-      if (!id) { location.href = '/'; return; }
+      if (!performance) $('chosen').innerHTML = '<div class="thumb plate"></div><div><p class="eyebrow">Anda mendukung</p><h1>Memuat…</h1></div>';
       try {
         const [config, p] = await Promise.all([api('/api/config'), api('/api/performances/' + encodeURIComponent(id))]);
-        price = config.votePrice; min = config.minVotes; max = config.maxVotes; performance = p;
-        mock = config.mock;
-        $('mock').hidden = !mock && config.paymentMode !== 'test';
-        if (!mock) $('mock').textContent = 'Xendit Test Mode. Use a simulated payment only. Test votes are kept separate.';
-        $('pay').disabled = !config.paymentsOpen;
-        $('payment-hint').textContent = !config.paymentsOpen ? 'Voting checkout is currently unavailable.' : mock
-          ? 'Continue to the simulated checkout.' : `Pay the exact amount using a ${config.bank} Virtual Account. Your votes are counted when Xendit confirms payment.`;
-        input.min = min;
-        input.max = max;
-        input.value = clamp(input.value);
-        document.title = `Vote for ${p.name}`;
-        $('chosen').style.setProperty('--hue', hueFor(p.id));
-        $('chosen').innerHTML = `
-          ${artHtml(p)}
-          <div>
-            <p class="eyebrow">You are voting for</p>
-            <h1 class="display">${escapeHtml(p.name)}</h1>
-            ${p.subtitle ? `<p>${escapeHtml(p.subtitle)}</p>` : ''}
-          </div>`;
-        $('chips').innerHTML = Array.from(new Set([min, 5, 10, 25, 50, 100])).filter((n) => n >= min && n <= max)
-          .map((n) => `<button type="button" class="chip" data-n="${n}">${n}</button>`).join('');
-        $('chips').onclick = (e) => {
-          const n = e.target.dataset?.n;
-          if (n) { input.value = n; update(); }
-        };
+        const same = performance && ['id', 'name', 'subtitle', 'image'].every((k) => p[k] === performance[k]);
+        if (!same) return renderPerformer(p, config);
+        applyConfig(config); performance = p;
+        const v = $('chosen').querySelector('.votes-now');
+        if (v && typeof p.votes === 'number') v.textContent = formatVotes(p.votes);
         update();
       } catch (err) {
-        $('error').textContent = err.message === 'Performance not found'
-          ? 'This performance is not open for voting.' : err.message;
-        $('pay').disabled = true;
+        // Biarin yang udah digambar server, kecuali belum ada apa-apa atau penampilnya hilang.
+        if (!performance || err.status === 404) showLoadError(err);
       }
     }
 
     $('form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!performance || $('pay').disabled) return;
+      if (!performance || sending || !paymentsOpen || $('pay').disabled) return;
       $('error').textContent = '';
-      input.value = clamp(input.value); update();
-      $('pay').disabled = true;
-      $('pay').textContent = 'Preparing payment…';
+      const votes = readVotes();
+      if (votes === null) { update(); input.focus(); return; }
+      if (!checkEmail()) { $('extra').open = true; $('email').focus(); return; }
+      sending = true;
+      $('pay').textContent = 'Menyiapkan pembayaran…';
+      // Kunci semua kontrol, biar angka di layar nggak bisa berubah setelah pesanan dikirim.
+      $('checkout').disabled = true;
       try {
+        // Kunci acak per penampil: backend memakainya buat mengenali checkout yang sama
+        // (halaman dibuka ulang / tombol dipencet dua kali) dan buat membuka status pesanannya.
         const storageKey = `starlight-checkout:${performance.id}`;
         let key;
         if (!mock) {
           key = sessionStorage.getItem(storageKey);
           if (!key) {
             const bytes = crypto.getRandomValues(new Uint8Array(32));
-            key = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+            key = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
             sessionStorage.setItem(storageKey, key);
           }
         }
@@ -137,21 +249,44 @@
           headers: key ? { 'x-order-access': key } : {},
           body: JSON.stringify({
             performanceId: performance.id,
-            votes: Number(input.value),
+            votes,
             name: $('name').value,
-            email: $('email').value,
+            email: $('email').value.trim(),
           }),
         });
         if (key) sessionStorage.removeItem(storageKey);
         location.href = order.checkoutUrl + (key ? `#key=${key}` : '');
       } catch (err) {
         $('error').textContent = err.message;
-        $('pay').disabled = false;
-        $('pay').textContent = 'Continue to payment';
+        sending = false;
+        $('checkout').disabled = false;
+        $('pay').textContent = 'Bayar Sekarang';
+        update();
       }
     });
 
-    init();
+    // Server nitip penampilnya di #boot, jadi halaman udah lengkap di render
+    // pertama (dan transisi dari kartu nemu posternya).
+    const boot = JSON.parse(document.getElementById('boot')?.textContent || 'null');
+    if (!id) location.replace('/');
+    else {
+      if (boot?.performance) renderPerformer(boot.performance, boot.config);
+      else if (boot) showLoadError({ status: 404, message: '' });
+      init();
+    }
+
+    // Transisi dengan beranda: plakat penampil ini (yang mana pun yang tampil
+    // di lebar layar ini) yang bergerak.
+    const plate = () => [$('poster-side').querySelector('.plate'), $('chosen').querySelector('.thumb')].find((el) => el && el.getClientRects().length);
+    addEventListener('pagereveal', (e) => {
+      const el = e.viewTransition && plate();
+      if (el) { el.style.viewTransitionName = 'poster'; e.viewTransition.finished.then(() => { el.style.viewTransitionName = ''; }); }
+    });
+    addEventListener('pageswap', (e) => {
+      const el = e.viewTransition && plate();
+      if (el) el.style.viewTransitionName = 'poster';
+    });
   </script>
+  <span id="siap" hidden></span>
 </body>
 </html>

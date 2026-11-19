@@ -1,96 +1,161 @@
 <!doctype html>
-<html lang="en">
+<html lang="id">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a1430">
+  <meta name="robots" content="noindex">
   <meta name="referrer" content="no-referrer">
-  <title>Vote Status</title>
-  <link rel="icon" href="/assets/logo.png">
+  <title>Status Pembayaran · Starlight UMN 2026</title>
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" href="/assets/starlight/icon.png" type="image/png" sizes="512x512">
+  <link rel="apple-touch-icon" href="/assets/starlight/apple-icon.png">
+  <link rel="preload" href="/fonts/efco-brookshire.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Alice&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
 </head>
-<body class="lake">
-  <div class="topbar">
-    <a href="/"><img class="mini-logo" src="/assets/logo.png" alt="Starlight home"></a>
-    <a class="back" href="/#performances">← All performances</a>
-  </div>
+<body>
+  <!-- Hutan willow dari footer situs utama, naik dari bawah layar. -->
+  <div class="scene" aria-hidden="true"></div>
+  <nav class="topbar">
+    <a class="back" href="/"><span aria-hidden="true">←</span> Semua penampil</a>
+    <a href="/" id="brand"><img class="brand" src="/assets/starlight/starlight-nav.webp" alt="Beranda People's Choice" width="64" height="64"></a>
+    <!-- Habis bayar itu momen orang paling pengen nyebarin link-nya. -->
+    <button class="back share" type="button" id="share" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path class="share-arrow" d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+        <path class="share-tick" d="M5 12.5 L10 17 L19 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"/>
+      </svg>
+      <span class="share-label" aria-live="polite">Bagikan</span>
+    </button>
+  </nav>
 
   <main class="page">
-    <div class="ornate" id="box" aria-live="polite">
-      <div class="status-icon wait">✦</div>
-      <h1 class="display" style="font-size:1.6rem">Checking payment…</h1>
+    <div class="panel status">
+      <div id="box" aria-live="polite">
+        <div class="sign wait" aria-hidden="true"></div>
+        <h1 class="display">Memeriksa pembayaran…</h1>
+      </div>
+      <p class="conn" id="conn" hidden>Status belum dapat diperiksa. Mencoba lagi…</p>
     </div>
   </main>
 
   <script src="/js/common.js"></script>
   <script>
-    sparkles(30);
     const orderId = new URLSearchParams(location.search).get('order');
+    // Kunci akses pesanan dibawa di #hash (bukan query), jadi nggak ikut terkirim ke server mana pun.
     const accessKey = new URLSearchParams(location.hash.slice(1)).get('key');
     const box = document.getElementById('box');
-    let tries = 0;
-    let previous;
-    const formatExpiry = new Intl.DateTimeFormat('en-GB', {
-      dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta',
-    });
+    const conn = document.getElementById('conn');
+    let tries = 0, previous, performer = null;
+    const formatExpiry = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' });
+    setupShare(document.getElementById('share'), () => performer);
 
-    function showAccount(o, what) {
-      box.innerHTML = `
-        ${o.test ? '<p class="mock-banner">Xendit Test Mode. Use a simulated payment only.</p>' : ''}
-        <p class="eyebrow">Bank transfer</p>
-        <h1 class="display" style="font-size:1.6rem">${escapeHtml(o.bank)} Virtual Account</h1>
-        <p>Pay for ${what}.</p>
-        <div class="total va-details">
-          <p class="label">Virtual account number</p>
-          <div class="va-copy"><code>${escapeHtml(o.virtualAccount)}</code><button class="btn ghost small" type="button" id="copy-va">Copy</button></div>
-          <p class="label">Exact amount</p>
-          <div class="amount">${formatIDR(o.amount)}</div>
-          <p class="note">Pay by ${formatExpiry.format(new Date(o.expiresAt))} WIB</p>
-        </div>
-        <p>${o.test ? 'Simulate the exact amount in Xendit Test Mode.' : 'Choose Virtual Account in your banking app, enter this number and pay the exact amount.'}</p>
-        <p class="note">Waiting for payment. This page updates automatically.<br>Order ID: ${escapeHtml(o.id)}</p>`;
-      const copy = document.getElementById('copy-va');
-      copy.onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(o.virtualAccount);
-          copy.textContent = 'Copied';
-        } catch {
-          copy.textContent = 'Select number to copy';
-        }
-      };
+    // Bintang lima sudut kayak logo Starlight.
+    const STAR = 'M12 1.8l3.1 6.6 7.2.8-5.3 4.9 1.4 7.1L12 17.6l-6.4 3.6 1.4-7.1L1.7 9.2l7.2-.8z';
+    const SPARKLE = `<svg class="sign ok" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${STAR}"/></svg>`;
+    // Percikan bintang kecil di sekelilingnya pas pembayaran terkonfirmasi
+    // (emas & lavender, 800ms, selesai sebelum satu detik).
+    const BURST = Array.from({ length: 10 }, (_, i) => {
+      const a = (i / 10) * 2 * Math.PI - Math.PI / 2;
+      const r = 50 + (i % 3) * 10;
+      return `<span class="spark" style="--dx:${Math.round(Math.cos(a) * r)}px; --dy:${Math.round(Math.sin(a) * r)}px; --c:${i % 2 ? '#cdb6ff' : '#ecc47a'}"><svg viewBox="0 0 24 24"><path d="${STAR}"/></svg></span>`;
+    }).join('');
+    const CROSS = '<svg class="sign bad" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6 L18 18 M18 6 L6 18" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>';
+
+    function receipt(o) {
+      return `
+        <dl class="receipt">
+          <div><dt>Penampil</dt><dd>${escapeHtml(o.performanceName)}</dd></div>
+          <div><dt>Jumlah suara</dt><dd>${formatVotes(o.votes)}</dd></div>
+          <div><dt>Total</dt><dd>${formatIDR(o.amount)}</dd></div>
+          <div class="wide">
+            <dt>Nomor pesanan</dt>
+            <dd><code>${escapeHtml(o.id)}</code><button class="copy" type="button" data-copy="${escapeHtml(o.id)}">Salin</button></dd>
+          </div>
+        </dl>`;
     }
 
+    // Salin nomor pesanan atau nomor virtual account.
+    box.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.copy');
+      if (!btn) return;
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copy);
+        btn.textContent = 'Disalin';
+      } catch {
+        btn.textContent = 'Gagal menyalin';
+      }
+      setTimeout(() => { btn.textContent = 'Salin'; }, 2000);
+    });
+
+    // Tampilan nomor Virtual Account bank. Nomor & batas waktunya datang dari backend.
+    function showAccount(o, what) {
+      box.innerHTML = `
+        ${o.test ? '<p class="mock-banner">Mode uji Xendit: gunakan pembayaran simulasi saja.</p>' : ''}
+        <p class="eyebrow">Transfer bank</p>
+        <h1 class="display">Virtual Account ${escapeHtml(o.bank)}</h1>
+        <p>Pembayaran ${what}.</p>
+        <div class="va">
+          <span class="va-label">Nomor virtual account</span>
+          <div class="va-number"><code>${escapeHtml(o.virtualAccount)}</code><button class="copy" type="button" data-copy="${escapeHtml(o.virtualAccount)}">Salin</button></div>
+          <span class="va-label">Nominal yang harus dibayar</span>
+          <div class="va-amount">${formatIDR(o.amount)}</div>
+          <p class="va-note">Bayar sebelum ${formatExpiry.format(new Date(o.expiresAt))} WIB</p>
+        </div>
+        <p>${o.test ? 'Simulasikan nominal yang tepat di Xendit Test Mode.' : 'Pilih Virtual Account di aplikasi bank Anda, masukkan nomor ini, lalu bayar sesuai nominal.'}</p>
+        <p class="hint">Menunggu pembayaran. Halaman ini diperbarui otomatis.</p>
+        ${receipt(o)}`;
+    }
+
+    // Dirender ulang cuma kalau datanya beneran berubah (lihat poll), biar live
+    // region nggak diumumin tiap polling dan fokus nggak hilang. Mengembalikan
+    // true kalau polling boleh berhenti.
     function render(o) {
-      const what = `${o.votes.toLocaleString('id-ID')} vote${o.votes > 1 ? 's' : ''} for <strong>${escapeHtml(o.performanceName)}</strong>`;
+      const again = `/vote?id=${encodeURIComponent(o.performanceId)}`;
+      const what = `${formatVotes(o.votes)} untuk <strong>${escapeHtml(o.performanceName)}</strong>`;
       if (o.status === 'PAID') {
+        performer = { id: o.performanceId, name: o.performanceName };
+        document.getElementById('share').hidden = false;
+        document.getElementById('brand').hidden = true;
         box.innerHTML = `
-          <div class="status-icon ok">★</div>
-          <p class="eyebrow">${o.test ? 'Test payment confirmed' : 'Payment confirmed'}</p>
-          <h1 class="display" style="font-size:clamp(1.5rem,5vw,2rem)">Your star shines brighter!</h1>
-          <div class="divider">✦</div>
-          <p>${what} ${o.votes > 1 ? 'have' : 'has'} been counted.</p>
-          <p class="note">Total paid: ${formatIDR(o.amount)}<br>Order ID: ${escapeHtml(o.id)}</p>
-          <a class="btn" href="/vote?id=${encodeURIComponent(o.performanceId)}">Vote again</a>
-          <p class="hint"><a href="/#performances">Back to all performances</a></p>`;
+          <div class="burst" aria-hidden="true">${SPARKLE}${BURST}</div>
+          <p class="eyebrow">${o.test ? 'Pembayaran uji berhasil' : 'Pembayaran berhasil'}</p>
+          <h1 class="display">Terima Kasih!</h1>
+          ${receipt(o)}
+          <div class="actions">
+            <a class="btn" href="/">Ke Daftar Penampil</a>
+            <a class="btn ghost" href="${again}">Beli Suara Lagi</a>
+          </div>`;
         return true;
       }
       if (o.status === 'EXPIRED') {
+        // Ada percobaan bank: orangnya bisa saja sudah transfer, jadi terus dipantau.
+        const late = !!o.paymentState;
         box.innerHTML = `
-          <div class="status-icon bad">✕</div>
-          <h1 class="display" style="font-size:1.6rem">Payment expired</h1>
-          <p>${o.paymentState ? `The virtual account for ${what} expired. If you already transferred, keep this page open for confirmation.` : `This payment for ${what} expired.`}</p>
-          <p class="note">Order ID: ${escapeHtml(o.id)}</p>
-          <a class="btn" href="/vote?id=${encodeURIComponent(o.performanceId)}">Try again</a>`;
-        return !o.paymentState;
+          ${CROSS}
+          <p class="eyebrow">Pembayaran kedaluwarsa</p>
+          <h1 class="display">Belum Terbayar</h1>
+          <p>${late ? `Virtual account pembayaran ${what} sudah kedaluwarsa. Jika Anda sudah mentransfer, biarkan halaman ini terbuka untuk menunggu konfirmasi.` : 'Tidak ada suara yang dihitung.'}</p>
+          ${receipt(o)}
+          <div class="actions">
+            <a class="btn" href="${again}">Coba Lagi</a>
+            <a class="btn ghost" href="/">Ke Daftar Penampil</a>
+          </div>`;
+        return !late;
       }
       if (o.paymentState === 'FAILED') {
         box.innerHTML = `
-          <div class="status-icon bad">✕</div>
-          <h1 class="display" style="font-size:1.6rem">Payment unavailable</h1>
-          <p>We couldn't open this bank payment.</p>
-          <a class="btn" href="/vote?id=${encodeURIComponent(o.performanceId)}">Try again</a>`;
+          ${CROSS}
+          <p class="eyebrow">Pembayaran tidak tersedia</p>
+          <h1 class="display">Pembayaran Gagal Dibuka</h1>
+          <p>Kami tidak dapat membuka pembayaran bank ini.</p>
+          <div class="actions">
+            <a class="btn" href="${again}">Coba Lagi</a>
+            <a class="btn ghost" href="/">Ke Daftar Penampil</a>
+          </div>`;
         return true;
       }
       if (o.virtualAccount) {
@@ -99,18 +164,23 @@
       }
       if (['CREATE_UNKNOWN', 'REVIEW'].includes(o.paymentState)) {
         box.innerHTML = `
-          <h1 class="display" style="font-size:1.6rem">Payment needs review</h1>
-          <p>Please contact the Starlight organizers with your order ID before making another payment.</p>
-          <p class="note">Order ID: ${escapeHtml(o.id)}</p>`;
+          <p class="eyebrow">Perlu ditinjau</p>
+          <h1 class="display">Pembayaran Perlu Ditinjau</h1>
+          <p>Silakan hubungi panitia Starlight dengan menyebutkan nomor pesanan sebelum melakukan pembayaran lagi.</p>
+          ${receipt(o)}`;
         return false;
       }
       box.innerHTML = `
-        <div class="status-icon wait">✦</div>
-        <p class="eyebrow">Waiting for confirmation</p>
-        <h1 class="display" style="font-size:1.6rem">${o.paymentState ? 'Checking bank payment' : 'Almost there…'}</h1>
-        <p>We're waiting for Xendit to update the payment for ${what}. This page updates automatically.</p>
-        ${o.invoiceUrl ? `<p class="hint">Haven't paid yet? <a href="${escapeHtml(o.invoiceUrl)}">Open the payment page</a></p>` : ''}
-        <p class="note">Order ID: ${escapeHtml(o.id)}</p>`;
+        <div class="sign wait" aria-hidden="true"></div>
+        <p class="eyebrow">Menunggu pembayaran</p>
+        <h1 class="display">${o.paymentState ? 'Memeriksa Pembayaran Bank' : 'Pembayaran Belum Selesai'}</h1>
+        ${o.paymentState ? `<p>Kami menunggu Xendit memperbarui pembayaran ${what}.</p>` : ''}
+        ${receipt(o)}
+        ${o.invoiceUrl ? `
+          <div class="actions">
+            <a class="btn" href="${escapeHtml(o.invoiceUrl)}">Bayar Sekarang</a>
+          </div>` : ''}
+        <p class="hint">Sudah membayar? Halaman ini diperbarui otomatis.</p>`;
       return false;
     }
 
@@ -120,16 +190,26 @@
         const o = await api('/api/orders/' + encodeURIComponent(orderId), {
           headers: accessKey ? { 'x-order-access': accessKey } : {},
         });
+        conn.hidden = true;
+        // Nomor VA & status bank bisa berubah walau status pesanan masih PENDING,
+        // jadi yang dibandingkan seluruh datanya, bukan statusnya saja.
         const current = JSON.stringify(o);
         if (current !== previous) {
           previous = current;
           if (render(o)) return;
         }
       } catch (err) {
-        if (err.message === 'Order not found') {
-          box.innerHTML = '<div class="status-icon bad">✕</div><h1 class="display" style="font-size:1.6rem">Order not found</h1><p><a href="/">Back to voting</a></p>';
+        if (err.status === 404) {
+          box.innerHTML = `
+            ${CROSS}
+            <h1 class="display">Pesanan Tidak Ditemukan</h1>
+            <p>Periksa kembali tautan yang Anda buka.</p>
+            <div class="actions"><a class="btn" href="/">Ke Daftar Penampil</a></div>`;
+          conn.hidden = true;
           return;
         }
+        // Koneksi bermasalah bukan berarti pembayaran gagal: biarin yang tampil, kasih tahu, coba lagi.
+        conn.hidden = false;
       }
       tries++;
       setTimeout(poll, tries < 20 ? 3000 : 10000);
