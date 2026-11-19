@@ -57,6 +57,7 @@ db.exec(`
     currency TEXT NOT NULL,
     channel_code TEXT NOT NULL,
     va_number TEXT,
+    qr_string TEXT,
     expires_at INTEGER NOT NULL,
     provider_status TEXT,
     state TEXT NOT NULL,
@@ -92,6 +93,14 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_inbox_checks ON xendit_inbox(environment, business_id, state, next_check_at);
 `);
+
+// Add QRIS instructions to existing databases while retaining bank payment history.
+if (!db.prepare('PRAGMA table_info(payment_attempts)').all().some(column => column.name === 'qr_string')) {
+  db.exec('ALTER TABLE payment_attempts ADD COLUMN qr_string TEXT');
+}
+if (!db.prepare('PRAGMA table_info(payment_attempts)').all().some(column => column.name === 'payment_actions')) {
+  db.exec("ALTER TABLE payment_attempts ADD COLUMN payment_actions TEXT NOT NULL DEFAULT '[]'");
+}
 
 // Sync performances from data/performances.json on startup (insert or update; never deletes,
 // so paid votes keep their reference). Remove a performance by setting "active": false.

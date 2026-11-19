@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const QRCode = require('qrcode');
 
 const envFile = path.join(__dirname, '..', '.env');
 if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
@@ -19,8 +20,14 @@ const MAX_VOTES = Number(process.env.MAX_VOTES_PER_ORDER) || 1000;
 const SHOW_RESULTS = (process.env.SHOW_RESULTS || 'true').toLowerCase() === 'true';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const mock = xendit.mode === 'mock';
-const minVotes = xendit.configured ? Math.ceil(xendit.bank.min / VOTE_PRICE) : 1;
-const maxVotes = xendit.configured ? Math.min(MAX_VOTES, Math.floor(xendit.bank.max / VOTE_PRICE)) : MAX_VOTES;
+const paymentMethods = xendit.enabledChannels.map(code => {
+  const method = xendit.channels[code];
+  return { code, name: method.name, kind: method.wallet ? 'wallet' : code === 'QRIS' ? 'qr' : 'bank',
+    requiresPhone: Boolean(method.requiresPhone), minVotes: Math.max(1, Math.ceil(method.min / VOTE_PRICE)),
+    maxVotes: Math.min(MAX_VOTES, Math.floor(method.max / VOTE_PRICE)) };
+}).filter(method => method.minVotes <= method.maxVotes);
+const minVotes = xendit.configured ? Math.min(...paymentMethods.map(method => method.minVotes)) : 1;
+const maxVotes = xendit.configured ? Math.max(...paymentMethods.map(method => method.maxVotes)) : MAX_VOTES;
 
 syncPerformances(path.join(__dirname, '..', 'data', 'performances.json'));
 
@@ -71,10 +78,26 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-function publicOrder(o, attempt) {
+function receiptCookieName(id) { return `starlight-order-${id}`; }
+
+function rememberReceipt(res, id, key) {
+  if (!/^[a-f0-9]{64}$/.test(key || '')) return;
+  res.cookie(receiptCookieName(id), key, { httpOnly: true, secure: BASE_URL.startsWith('https://'),
+    sameSite: 'lax', path: `/api/orders/${id}`, maxAge: 8 * 24 * 60 * 60 * 1000 });
+}
+
+function receiptKey(req, id) {
+  const header = req.get('x-order-access');
+  if (header) return header;
+  const prefix = `${receiptCookieName(id)}=`;
+  return (req.get('cookie') || '').split(';').map(cookie => cookie.trim())
+    .find(cookie => cookie.startsWith(prefix))?.slice(prefix.length);
+}
+
+async function publicOrder(o, attempt) {
   const canPay = attempt && attempt.state === 'AWAITING_PAYMENT' &&
     ['REQUIRES_ACTION', 'ACCEPTING_PAYMENTS', 'PENDING'].includes(attempt.provider_status) &&
-    attempt.va_number && attempt.expires_at > Date.now();
+    attempt.expires_at > Date.now();
   return {
     id: o.id,
     status: o.status,
@@ -85,8 +108,18 @@ function publicOrder(o, attempt) {
     invoiceUrl: mock && o.status === 'PENDING' && o.xendit_invoice_id?.startsWith('mock-') ? o.invoice_url : null,
     paymentState: attempt?.state,
     test: attempt?.environment === 'test',
-    bank: attempt ? xendit.banks[attempt.channel_code]?.name : undefined,
+    channelCode: attempt?.channel_code,
+    paymentMethod: attempt ? xendit.channels[attempt.channel_code]?.name : undefined,
+    paymentKind: attempt ? xendit.channels[attempt.channel_code]?.wallet ? 'wallet' : attempt.channel_code === 'QRIS' ? 'qr' : 'bank' : undefined,
+    walletPayment: Boolean(canPay && xendit.channels[attempt.channel_code]?.wallet && !attempt.issue),
+    paymentActions: canPay ? JSON.parse(attempt.payment_actions || '[]') : [],
+    paymentError: attempt?.state === 'FAILED'
+      ? 'This payment method is currently unavailable. Please choose another payment method or contact the organizers.' : null,
+    bank: attempt && !xendit.channels[attempt.channel_code]?.wallet && attempt.channel_code !== 'QRIS'
+      ? xendit.channels[attempt.channel_code]?.name : null,
     virtualAccount: canPay ? attempt.va_number : null,
+    qrCodeImage: canPay && attempt.channel_code === 'QRIS' && attempt.qr_string
+      ? await QRCode.toDataURL(attempt.qr_string, { width: 384, margin: 4, errorCorrectionLevel: 'M' }) : null,
     expiresAt: attempt ? new Date(attempt.expires_at).toISOString() : null,
   };
 }
@@ -96,7 +129,11 @@ function publicOrder(o, attempt) {
 app.get('/api/config', (req, res) => {
   res.json({ votePrice: VOTE_PRICE, minVotes, maxVotes, showResults: SHOW_RESULTS, mock,
     paymentsOpen: xendit.acceptsOrders && minVotes <= maxVotes, paymentMode: xendit.configured ? xendit.mode : mock ? 'mock' : 'disabled',
-    bank: xendit.configured ? xendit.bank.name : null });
+    channelCode: xendit.configured ? xendit.defaultChannel : null,
+    paymentMethods: xendit.configured ? paymentMethods : [],
+    paymentMethod: xendit.configured ? xendit.channels[xendit.defaultChannel].name : null,
+    bank: xendit.configured && !xendit.channels[xendit.defaultChannel].wallet && xendit.defaultChannel !== 'QRIS'
+      ? xendit.channels[xendit.defaultChannel].name : null });
 });
 
 app.get('/api/performances', (req, res) => {
@@ -112,21 +149,39 @@ app.get('/api/performances/:id', (req, res) => {
 
 app.post('/api/orders', rateLimit(10, 60 * 1000), async (req, res) => {
   const { performanceId, votes, name, email } = req.body || {};
+  const channelCode = req.body?.channelCode ?? xendit.defaultChannel;
+  const method = paymentMethods.find(method => method.code === channelCode);
   const count = Number(votes);
   const hash = mock ? null : payments.checkoutHash(req.get('x-order-access'));
   if (!mock && !hash) return res.status(400).json({ error: 'A valid checkout key is required.' });
 
   if (hash) {
     const existing = payments.findCheckout(hash);
-    if (existing) return sendExistingCheckout(res, existing, performanceId, count);
+    if (existing) {
+      rememberReceipt(res, existing.order_id, req.get('x-order-access'));
+      return sendExistingCheckout(res, existing, performanceId, count, req.body?.channelCode);
+    }
   }
   if (!xendit.acceptsOrders || minVotes > maxVotes) {
     return res.status(503).json({ error: 'Voting checkout is currently unavailable.' });
   }
+  if (!mock && !method) return res.status(400).json({ error: 'Please choose an available payment method.' });
   const performance = stmts.getPerformance.get(String(performanceId || ''));
   if (!performance) return res.status(400).json({ error: 'Please choose a valid performance.' });
-  if (!Number.isInteger(count) || count < minVotes || count > maxVotes) {
-    return res.status(400).json({ error: `Votes must be a whole number between ${minVotes} and ${maxVotes}.` });
+  const methodMin = mock ? minVotes : method.minVotes;
+  const methodMax = mock ? maxVotes : method.maxVotes;
+  if (!Number.isInteger(count) || count < methodMin || count > methodMax) {
+    return res.status(400).json({ error: `Votes must be a whole number between ${methodMin} and ${methodMax}.` });
+  }
+
+  let phoneNumber;
+  if (!mock && method.requiresPhone) {
+    phoneNumber = typeof req.body.phoneNumber === 'string' ? req.body.phoneNumber.trim().replace(/[\s()-]/g, '') : '';
+    if (phoneNumber.startsWith('08')) phoneNumber = '+62' + phoneNumber.slice(1);
+    else if (phoneNumber.startsWith('628')) phoneNumber = '+' + phoneNumber;
+    if (!/^\+628\d{7,11}$/.test(phoneNumber)) {
+      return res.status(400).json({ error: 'Enter the Indonesian phone number registered with OVO, for example 081234567890.' });
+    }
   }
 
   const voterName = String(name || '').trim().slice(0, 80);
@@ -147,9 +202,10 @@ app.post('/api/orders', rateLimit(10, 60 * 1000), async (req, res) => {
   }
 
   const { attempt, existing } = payments.reserveOrder({ id, hash, performanceId: performance.id,
-    votes: count, amount, voterName, voterEmail });
-  if (existing) return sendExistingCheckout(res, existing, performanceId, count);
-  await payments.create(attempt);
+    votes: count, amount, voterName, voterEmail, channelCode });
+  rememberReceipt(res, existing?.order_id || id, req.get('x-order-access'));
+  if (existing) return sendExistingCheckout(res, existing, performanceId, count, channelCode);
+  await payments.create(attempt, { phoneNumber, returnUrl: `${BASE_URL}/status?order=${encodeURIComponent(id)}` });
   res.status(201).json(checkoutResponse(id, amount, count));
 });
 
@@ -157,20 +213,25 @@ function checkoutResponse(id, amount, votes) {
   return { orderId: id, checkoutUrl: `/status?order=${id}`, amount, votes };
 }
 
-function sendExistingCheckout(res, existing, performanceId, votes) {
+function sendExistingCheckout(res, existing, performanceId, votes, channelCode) {
   if (existing.performance_id !== performanceId || existing.votes !== votes) {
     return res.status(409).json({ error: `This checkout was opened for ${existing.votes} vote(s). Use that quantity to resume payment.` });
+  }
+  if (channelCode !== undefined && existing.channel_code !== channelCode) {
+    return res.status(409).json({ error: 'This checkout already uses a different payment method. Resume the original payment before starting another.' });
   }
   return res.json(checkoutResponse(existing.order_id, existing.amount, existing.votes));
 }
 
-app.get('/api/orders/:id', (req, res) => {
+app.get('/api/orders/:id', async (req, res) => {
   const id = req.params.id;
-  const attempt = payments.attemptForOrder(id, req.get('x-order-access'));
+  const key = receiptKey(req, id);
+  const attempt = payments.attemptForOrder(id, key);
   if (attempt === null) return res.status(404).json({ error: 'Order not found' });
   const order = stmts.getOrder.get(id);
   if (!order) return res.status(404).json({ error: 'Order not found' });
-  res.json(publicOrder(order, attempt));
+  if (attempt) rememberReceipt(res, id, key);
+  res.json(await publicOrder(order, attempt));
 });
 
 if (mock) {

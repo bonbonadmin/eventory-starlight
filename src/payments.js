@@ -20,7 +20,8 @@ const sql = {
     VALUES (?, ?, ?, ?, ?, ?, 'IDR', ?, ?, 'CREATING', ?, ?)`),
   updateState: db.prepare(`UPDATE payment_attempts SET state = ?, issue = ?, next_check_at = ?, check_failures = 0 WHERE order_id = ?`),
   bindRequest: db.prepare(`UPDATE payment_attempts SET payment_request_id = ?, provider_status = ?,
-    va_number = COALESCE(?, va_number), expires_at = ? WHERE order_id = ?`),
+    va_number = COALESCE(?, va_number), qr_string = COALESCE(?, qr_string), expires_at = ? WHERE order_id = ?`),
+  bindActions: db.prepare('UPDATE payment_attempts SET payment_actions = ? WHERE order_id = ?'),
   credit: db.prepare(`UPDATE orders SET status = 'PAID', paid_at = datetime('now'), payment_method = ?
     WHERE id = ? AND status IN ('PENDING', 'EXPIRED')`),
   expire: db.prepare("UPDATE orders SET status = 'EXPIRED' WHERE id = ? AND status = 'PENDING'"),
@@ -79,14 +80,14 @@ function attemptForOrder(id, key) {
   return hash && crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(attempt.checkout_hash)) ? attempt : null;
 }
 
-function reserveOrder({ id, hash, performanceId, votes, amount, voterName, voterEmail }) {
+function reserveOrder({ id, hash, performanceId, votes, amount, voterName, voterEmail, channelCode = xendit.defaultChannel }) {
   return transaction(() => {
     const existing = sql.byKey.get(hash);
     if (existing) return { existing };
     const now = Date.now();
     stmts.insertOrder.run(id, performanceId, votes, amount, voterName, voterEmail);
     sql.reserve.run(id, hash, `starlight-${xendit.mode}-${id}`, xendit.businessId, xendit.mode, amount,
-      xendit.channelCode, now + xendit.ttlSeconds * 1000, now, now + MINUTE);
+      channelCode, now + (xendit.channels[channelCode].ttl || xendit.ttlSeconds) * 1000, now, now + MINUTE);
     return { attempt: sql.byOrder.get(id) };
   });
 }
@@ -97,6 +98,21 @@ function providerId(value, prefix) {
 
 function label(value) {
   return typeof value === 'string' && /^[a-zA-Z0-9_.:-]{1,120}$/.test(value) ? value : null;
+}
+
+// Only provider-returned customer navigation actions may leave this API.
+function paymentActions(actions, channelCode) {
+  if (!Array.isArray(actions)) return [];
+  const appProtocols = { SHOPEEPAY: ['shopeeid:', 'shopee:'], DANA: ['dana:'], OVO: ['ovo:'] };
+  return actions.filter(a => {
+    if (a?.type !== 'REDIRECT_CUSTOMER' || !['WEB_URL', 'DEEPLINK_URL'].includes(a.descriptor) ||
+        typeof a.value !== 'string' || a.value.length > 8192 || /[\u0000-\u0020\u007f]/.test(a.value)) return false;
+    try {
+      const url = new URL(a.value);
+      return !url.username && !url.password && (url.protocol === 'https:' ||
+        a.descriptor === 'DEEPLINK_URL' && (appProtocols[channelCode] || []).includes(url.protocol));
+    } catch { return false; }
+  }).slice(0, 6).map(a => ({ type: a.type, descriptor: a.descriptor, value: a.value }));
 }
 
 function identityMatches(attempt, data) {
@@ -134,8 +150,15 @@ function recordRequest(orderId, data, expectedId = null) {
     const action = Array.isArray(data.actions) && data.actions.find(a =>
       a?.type === 'PRESENT_TO_CUSTOMER' && a.descriptor === 'VIRTUAL_ACCOUNT_NUMBER');
     const number = typeof action?.value === 'string' && /^\d{4,40}$/.test(action.value) ? action.value : null;
+    const qrAction = Array.isArray(data.actions) && data.actions.find(a =>
+      a?.type === 'PRESENT_TO_CUSTOMER' && a.descriptor === 'QR_STRING');
+    const qr = attempt.channel_code === 'QRIS' && typeof qrAction?.value === 'string' &&
+      qrAction.value.startsWith('000201') && qrAction.value.length <= 2000 ? qrAction.value : null;
+    const actions = Array.isArray(data.actions) ? paymentActions(data.actions, attempt.channel_code)
+      : JSON.parse(attempt.payment_actions || '[]');
+    if (Array.isArray(data.actions)) sql.bindActions.run(JSON.stringify(actions), orderId);
     const expiry = Date.parse(data.channel_properties?.expires_at);
-    sql.bindRequest.run(requestId, status, number, Number.isFinite(expiry) ? expiry : attempt.expires_at, orderId);
+    sql.bindRequest.run(requestId, status, number, qr, Number.isFinite(expiry) ? expiry : attempt.expires_at, orderId);
     if (['REVIEW', 'FAILED'].includes(attempt.state)) return true;
     const now = Date.now();
     const expiresAt = Number.isFinite(expiry) ? expiry : attempt.expires_at;
@@ -146,7 +169,10 @@ function recordRequest(orderId, data, expectedId = null) {
       const nextCheck = now < expiresAt + RECONCILE_DAYS * DAY ? now + 30 * MINUTE : NEVER;
       sql.updateState.run('EXPIRED', null, nextCheck, orderId);
     } else {
-      const issue = !(number || attempt.va_number) && status !== 'SUCCEEDED' ? 'VA_INSTRUCTIONS_MISSING' : null;
+      const hasInstructions = xendit.channels[attempt.channel_code]?.wallet
+        ? actions.length > 0 || attempt.channel_code === 'OVO' && ['PENDING', 'REQUIRES_ACTION'].includes(status)
+        : attempt.channel_code === 'QRIS' ? qr || attempt.qr_string : number || attempt.va_number;
+      const issue = !hasInstructions && status !== 'SUCCEEDED' ? 'PAYMENT_INSTRUCTIONS_MISSING' : null;
       if (issue && attempt.issue !== issue) console.warn(`[payments] ${orderId}: ${issue}`);
       const nextCheck = now < expiresAt + RECONCILE_DAYS * DAY ? now + MINUTE : NEVER;
       if (nextCheck === NEVER) flag(attempt, 'REQUEST_UNRESOLVED');
@@ -156,9 +182,9 @@ function recordRequest(orderId, data, expectedId = null) {
   });
 }
 
-async function create(attempt) {
+async function create(attempt, options) {
   try {
-    const request = await xendit.createPaymentRequest(attempt);
+    const request = await xendit.createPaymentRequest(attempt, options);
     recordRequest(attempt.order_id, request);
   } catch (error) {
     const current = sql.byOrder.get(attempt.order_id);
@@ -173,8 +199,11 @@ async function create(attempt) {
 function acceptWebhook(body) {
   if (!body || typeof body !== 'object' || !label(body.event) || !body.data ||
       typeof body.data !== 'object' || Array.isArray(body.data)) return 400;
-  if (body.business_id !== xendit.businessId ||
-      (body.data.business_id != null && body.data.business_id !== body.business_id)) return 403;
+  if (!label(body.business_id)) return 400;
+  if (body.data.business_id != null && body.data.business_id !== body.business_id) return 403;
+  // Dashboard Test & Save uses a sample business ID. Authentication happens in
+  // the route; acknowledge other businesses without persisting or processing them.
+  if (body.business_id !== xendit.businessId) return 200;
   const data = body.data;
   const summary = JSON.stringify({
     event: body.event, requestId: providerId(data.payment_request_id, 'pr-'),
@@ -238,7 +267,7 @@ function recordCapture(orderId, payment, expectedPaymentId, expectedRequestId) {
       return outcome;
     }
     // Verified late captures can credit the original expired order, once.
-    sql.bindRequest.run(requestId, payment.status, null, attempt.expires_at, orderId);
+    sql.bindRequest.run(requestId, payment.status, null, null, attempt.expires_at, orderId);
     if (sql.credit.run(attempt.channel_code, orderId).changes !== 1) throw new Error('Order was not creditable');
     sql.updateState.run('PAID', null, NEVER, orderId);
     return outcome;
@@ -285,6 +314,9 @@ async function processEvent(row) {
       outcome = await reconcile(attempt, event.requestId);
     } else {
       sql.failure.run(event.failure || 'PAYMENT_FAILURE', attempt.order_id);
+      // A wallet rejection can make the request terminal. Ask the provider rather
+      // than leaving a failed push or redirect visible until its original expiry.
+      outcome = await reconcile(attempt, event.requestId);
     }
     const needsReview = outcome && outcome !== 'CREDITED';
     sql.finishEvent.run(needsReview ? 'REVIEW' : 'PROCESSED', needsReview ? outcome : null, row.event_key);
