@@ -80,6 +80,15 @@ db.exec(`
   );
   CREATE UNIQUE INDEX IF NOT EXISTS idx_one_credit_per_order ON xendit_payments(order_id) WHERE outcome = 'CREDITED';
 
+  CREATE TABLE IF NOT EXISTS vote_exclusions (
+    order_id TEXT PRIMARY KEY REFERENCES orders(id),
+    payment_id TEXT REFERENCES xendit_payments(payment_id),
+    excluded_votes INTEGER NOT NULL CHECK (excluded_votes > 0),
+    reason TEXT NOT NULL,
+    recorded_by TEXT NOT NULL,
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+
   CREATE TABLE IF NOT EXISTS xendit_inbox (
     event_key TEXT PRIMARY KEY,
     environment TEXT NOT NULL,
@@ -122,13 +131,19 @@ function syncPerformances(file) {
 const stmts = {
   listPerformances: db.prepare(`
     SELECT p.id, p.name, p.subtitle, p.image,
-           COALESCE(SUM(o.votes), 0) AS votes
+           COALESCE(SUM(MAX(o.votes - COALESCE(e.excluded_votes, 0), 0)), 0) AS votes
     FROM performances p
     LEFT JOIN orders o ON o.performance_id = p.id AND o.status = 'PAID'
       AND (? = 1 OR COALESCE(o.payment_method, '') <> 'MOCK')
+    LEFT JOIN vote_exclusions e ON e.order_id = o.id
     WHERE p.active = 1
     GROUP BY p.id
     ORDER BY p.sort_order
+  `),
+  revenueForPerformance: db.prepare(`
+    SELECT COALESCE(SUM(amount), 0) AS revenue FROM orders
+    WHERE performance_id = ? AND status = 'PAID'
+      AND (? = 1 OR COALESCE(payment_method, '') <> 'MOCK')
   `),
   getPerformance: db.prepare(`SELECT id, name, subtitle, image FROM performances WHERE id = ? AND active = 1`),
   insertOrder: db.prepare(`

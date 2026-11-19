@@ -46,7 +46,11 @@
   <script>
     const orderId = new URLSearchParams(location.search).get('order');
     // Kunci akses pesanan dibawa di #hash (bukan query), jadi nggak ikut terkirim ke server mana pun.
-    const accessKey = new URLSearchParams(location.hash.slice(1)).get('key');
+    let accessKey = new URLSearchParams(location.hash.slice(1)).get('key');
+    try {
+      if (accessKey) sessionStorage.setItem(`starlight-order:${orderId}`, accessKey);
+      else accessKey = sessionStorage.getItem(`starlight-order:${orderId}`);
+    } catch { /* The receipt fragment and server cookie can still authorize the order. */ }
     const box = document.getElementById('box');
     const conn = document.getElementById('conn');
     let tries = 0, previous, performer = null;
@@ -110,6 +114,46 @@
         ${receipt(o)}`;
     }
 
+    function showQR(o, what) {
+      box.innerHTML = `
+        ${o.test ? '<p class="mock-banner">Mode uji Xendit: gunakan pembayaran simulasi saja.</p>' : ''}
+        <p class="eyebrow">Pindai untuk membayar</p>
+        <h1 class="display">Bayar dengan QRIS</h1>
+        <p>Pembayaran ${what}.</p>
+        <div class="va">
+          <img class="payment-qr" src="${escapeHtml(o.qrCodeImage)}" alt="Kode QR pembayaran QRIS" width="384" height="384">
+          <div class="actions"><a class="btn ghost" href="${escapeHtml(o.qrCodeImage)}" download="starlight-qris.png">Simpan Kode QR</a></div>
+          <span class="va-label">Nominal yang harus dibayar</span>
+          <div class="va-amount">${formatIDR(o.amount)}</div>
+          <p class="va-note">Bayar sebelum ${formatExpiry.format(new Date(o.expiresAt))} WIB</p>
+        </div>
+        <p>${o.test ? 'Simulasikan nominal yang tepat di Xendit Test Mode.' : 'Pindai dengan aplikasi bank atau dompet digital Anda. Di ponsel ini, simpan kode QR lalu impor ke aplikasi pembayaran. Periksa nama merchant dan nominal sebelum menyetujui.'}</p>
+        <p class="hint">Menunggu pembayaran. Halaman ini diperbarui otomatis.</p>
+        ${receipt(o)}`;
+    }
+
+    function showWallet(o, what) {
+      const method = escapeHtml(o.paymentMethod || o.channelCode);
+      const actions = (o.paymentActions || []).filter(action =>
+        ['WEB_URL', 'DEEPLINK_URL'].includes(action.descriptor) && typeof action.value === 'string');
+      box.innerHTML = `
+        ${o.test ? '<p class="mock-banner">Mode uji Xendit: gunakan pembayaran simulasi saja.</p>' : ''}
+        <p class="eyebrow">Pembayaran dompet digital</p>
+        <h1 class="display">Bayar dengan ${method}</h1>
+        <p>Pembayaran ${what}.</p>
+        <div class="va">
+          <span class="va-label">Nominal yang harus dibayar</span>
+          <div class="va-amount">${formatIDR(o.amount)}</div>
+          ${o.expiresAt ? `<p class="va-note">Bayar sebelum ${formatExpiry.format(new Date(o.expiresAt))} WIB</p>` : ''}
+        </div>
+        <p>${o.test ? 'Simulasikan pembayaran ini di Xendit Test Mode.' : o.channelCode === 'OVO'
+          ? 'Buka OVO dan setujui permintaan pembayaran. Gunakan tautan pembayaran di bawah jika tersedia.'
+          : `Lanjut ke ${method} untuk menyetujui pembayaran.`}</p>
+        <div class="actions">${actions.map(action => `<a class="btn${action.descriptor === 'WEB_URL' && actions.some(a => a.descriptor === 'DEEPLINK_URL') ? ' ghost' : ''}" href="${escapeHtml(action.value)}" rel="noreferrer">${action.descriptor === 'DEEPLINK_URL' ? `Buka Aplikasi ${method}` : `Lanjut ke ${method}`}</a>`).join('')}</div>
+        <p class="hint">Suara dihitung setelah pembayaran dikonfirmasi. Kembali ke halaman ini untuk melihat hasilnya.</p>
+        ${receipt(o)}`;
+    }
+
     // Dirender ulang cuma kalau datanya beneran berubah (lihat poll), biar live
     // region nggak diumumin tiap polling dan fokus nggak hilang. Mengembalikan
     // true kalau polling boleh berhenti.
@@ -138,7 +182,7 @@
           ${CROSS}
           <p class="eyebrow">Pembayaran kedaluwarsa</p>
           <h1 class="display">Belum Terbayar</h1>
-          <p>${late ? `Virtual account pembayaran ${what} sudah kedaluwarsa. Jika Anda sudah mentransfer, biarkan halaman ini terbuka untuk menunggu konfirmasi.` : 'Tidak ada suara yang dihitung.'}</p>
+          <p>${late ? `Pembayaran ${what} sudah kedaluwarsa. Jika Anda sudah membayar, biarkan halaman ini terbuka untuk menunggu konfirmasi.` : 'Tidak ada suara yang dihitung.'}</p>
           ${receipt(o)}
           <div class="actions">
             <a class="btn" href="${again}">Coba Lagi</a>
@@ -151,16 +195,13 @@
           ${CROSS}
           <p class="eyebrow">Pembayaran tidak tersedia</p>
           <h1 class="display">Pembayaran Gagal Dibuka</h1>
-          <p>Kami tidak dapat membuka pembayaran bank ini.</p>
+          <p>Metode pembayaran ini sedang tidak tersedia. Coba metode lain atau hubungi panitia.</p>
+          ${receipt(o)}
           <div class="actions">
             <a class="btn" href="${again}">Coba Lagi</a>
             <a class="btn ghost" href="/">Ke Daftar Penampil</a>
           </div>`;
         return true;
-      }
-      if (o.virtualAccount) {
-        showAccount(o, what);
-        return false;
       }
       if (['CREATE_UNKNOWN', 'REVIEW'].includes(o.paymentState)) {
         box.innerHTML = `
@@ -170,10 +211,22 @@
           ${receipt(o)}`;
         return false;
       }
+      if (o.qrCodeImage) {
+        showQR(o, what);
+        return false;
+      }
+      if (o.virtualAccount) {
+        showAccount(o, what);
+        return false;
+      }
+      if (o.walletPayment || (o.paymentKind === 'wallet' && o.paymentActions?.length)) {
+        showWallet(o, what);
+        return false;
+      }
       box.innerHTML = `
         <div class="sign wait" aria-hidden="true"></div>
         <p class="eyebrow">Menunggu pembayaran</p>
-        <h1 class="display">${o.paymentState ? 'Memeriksa Pembayaran Bank' : 'Pembayaran Belum Selesai'}</h1>
+        <h1 class="display">${o.paymentState ? 'Memeriksa Pembayaran' : 'Pembayaran Belum Selesai'}</h1>
         ${o.paymentState ? `<p>Kami menunggu Xendit memperbarui pembayaran ${what}.</p>` : ''}
         ${receipt(o)}
         ${o.invoiceUrl ? `

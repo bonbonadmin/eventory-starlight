@@ -249,7 +249,8 @@ if (mock) {
 
 app.get('/api/admin/results', requireAdmin, (req, res) => {
   const rows = stmts.listPerformances.all(Number(mock));
-  res.json(rows.map((p) => ({ ...p, revenue: p.votes * VOTE_PRICE })));
+  res.json(rows.map((p) => ({ ...p,
+    revenue: stmts.revenueForPerformance.get(p.id, Number(mock)).revenue })));
 });
 
 app.get('/api/admin/orders', requireAdmin, (req, res) => {
@@ -260,6 +261,7 @@ app.get('/api/admin/orders', requireAdmin, (req, res) => {
 app.get('/api/admin/payment-review', requireAdmin, (req, res) => res.json(payments.review()));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+app.use((req, res) => res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html')));
 
 app.use((err, req, res, next) => {
   console.error(`[server] ${req.method} request failed (${err.code || err.type || err.name})`);

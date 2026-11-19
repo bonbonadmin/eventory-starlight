@@ -125,6 +125,10 @@ wallet payment separately after activation to verify end-to-end account readines
 
 ## Operations
 
+- Authorized vote removals are recorded separately in `vote_exclusions`, including
+  the order, payment, excluded quantity, reason, operator and timestamp. Public and
+  admin vote totals apply these exclusions. Payment receipts and captured revenue
+  retain the original payment history.
 - The receipt link carries a private browser access key in its fragment. The order ID
   alone cannot retrieve payment instructions. Keep the receipt link private.
 - The worker processes a durable webhook inbox and periodically checks known Payment

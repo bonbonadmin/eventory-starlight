@@ -16,6 +16,9 @@ const MESSAGES = [
   [/checkout is currently unavailable/i, 'Pembayaran suara sedang tidak tersedia.'],
   [/checkout was opened for (\d+) vote/i, (m) => `Pembayaran ini sudah dibuka untuk ${m[1]} suara. Gunakan jumlah yang sama untuk melanjutkan.`],
   [/valid email/i, 'Format email tidak valid. Kosongkan jika tidak diperlukan.'],
+  [/available payment method/i, 'Pilih metode pembayaran yang tersedia.'],
+  [/different payment method/i, 'Pembayaran ini memakai metode lain. Lanjutkan pembayaran sebelumnya.'],
+  [/phone number registered with OVO/i, 'Masukkan nomor Indonesia yang terdaftar di OVO.'],
   [/too many requests/i, 'Terlalu banyak percobaan. Mohon tunggu sebentar, lalu coba lagi.'],
   [/could not start payment/i, 'Pembayaran gagal dimulai. Silakan coba lagi.'],
 ];

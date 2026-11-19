@@ -23,7 +23,7 @@ test('wallet checkout validates method and phone, protects handoffs and credits 
       XENDIT_MODE: 'test', XENDIT_CHANNEL_CODE: 'SHOPEEPAY', XENDIT_CHANNEL_CODES: 'SHOPEEPAY,OVO,DANA',
       XENDIT_PAYMENT_TTL_SECONDS: '3600', XENDIT_ACCEPT_NEW_ORDERS: 'true',
       XENDIT_API_KEY: 'xnd_development_fixture', XENDIT_WEBHOOK_TOKEN: 'fixture-token',
-      XENDIT_BUSINESS_ID: 'fixture-business' },
+      XENDIT_BUSINESS_ID: 'fixture-business', ADMIN_KEY: 'fixture-admin' },
   });
   let output = '';
   child.stderr.on('data', data => { output += data; });
@@ -136,11 +136,31 @@ test('wallet checkout validates method and phone, protects handoffs and credits 
     assert.equal(paid.status, 'PAID', output);
     assert.deepEqual(paid.paymentActions, []);
   }
-  const db = new DatabaseSync(path.join(dir, 'test.db'), {readOnly: true});
+  const db = new DatabaseSync(path.join(dir, 'test.db'));
   try {
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM xendit_payments WHERE outcome = 'CREDITED'").get().n, 3);
     assert.equal(db.prepare('SELECT SUM(votes) AS votes FROM orders WHERE status = ?').get('PAID').votes, 3);
     assert.deepEqual(db.prepare("SELECT DISTINCT payment_method FROM orders WHERE status = 'PAID' ORDER BY payment_method").all()
       .map(r => r.payment_method), ['DANA', 'OVO', 'SHOPEEPAY']);
+    const order = placed[0];
+    const payment = db.prepare("SELECT payment_id FROM xendit_payments WHERE order_id = ? AND outcome = 'CREDITED'").get(order.orderId);
+    db.prepare(`INSERT INTO vote_exclusions (order_id, payment_id, excluded_votes, reason, recorded_by)
+      VALUES (?, ?, 1, 'Owner requested separate vote audit', 'Owner')`).run(order.orderId, payment.payment_id);
+    const votesNow = async () => (await (await fetch(`${base}/api/performances`)).json()).find(p => p.id === performers[0].id).votes;
+    assert.equal(await votesNow(), 2, 'audited exclusion removes one vote from the public totals');
+    const results = await (await fetch(`${base}/api/admin/results`, {headers: {'x-admin-key': 'fixture-admin'}})).json();
+    const result = results.find(p => p.id === performers[0].id);
+    assert.equal(result.votes, 2);
+    assert.equal(result.revenue, 15000, 'excluding votes must retain captured revenue');
+    assert.equal((await get(order)).status, 'PAID', 'the payment receipt remains paid');
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM xendit_payments WHERE outcome = 'CREDITED'").get().n, 3);
+    assert.throws(() => db.prepare(`INSERT INTO vote_exclusions (order_id, excluded_votes, reason, recorded_by)
+      VALUES (?, 1, 'Duplicate exclusion', 'Owner')`).run(order.orderId), /UNIQUE/);
+    // Replaying a capture after the adjustment cannot restore the excluded vote.
+    assert.equal((await webhook({event: 'payment.capture', business_id: 'fixture-business', data: {
+      ...order.request, status: 'SUCCEEDED', payment_id: payment.payment_id,
+    }})).status, 202);
+    assert.equal(await votesNow(), 2);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vote_exclusions').get().n, 1);
   } finally { db.close(); }
 });
